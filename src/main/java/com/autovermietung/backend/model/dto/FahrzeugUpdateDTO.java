@@ -25,4 +25,5 @@ public class FahrzeugUpdateDTO {
     private BigDecimal kaution;
 
     private FahrzeugStatus status;
+    private String bildUrl;
 }

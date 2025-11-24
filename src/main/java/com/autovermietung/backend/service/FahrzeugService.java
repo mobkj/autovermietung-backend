@@ -90,7 +90,9 @@ public class FahrzeugService {
         f.setFreiKmProTag(dto.getFreiKmProTag());
         f.setKaution(dto.getKaution());
         f.setStatus(dto.getStatus());
-
+        if (dto.getBildUrl() != null && !dto.getBildUrl().isBlank()) {
+            f.setBildUrl(dto.getBildUrl());
+        }
         return toDTO(repo.save(f));
     }
 
