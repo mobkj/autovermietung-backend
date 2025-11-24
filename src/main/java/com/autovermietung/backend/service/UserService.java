@@ -21,7 +21,9 @@ public class UserService {
                         u.getFirstName(),
                         u.getLastName(),
                         u.getEmail(),
-                        u.getRole().name()
+                        u.getRole().name(),
+                        u.getBirthDate(),
+                        u.getDriverLicenseNumber()
                 ))
                 .toList();
     }
@@ -33,7 +35,9 @@ public class UserService {
                         u.getFirstName(),
                         u.getLastName(),
                         u.getEmail(),
-                        u.getRole().name()
+                        u.getRole().name(),
+                        u.getBirthDate(),
+                        u.getDriverLicenseNumber()
                 ));
     }
 

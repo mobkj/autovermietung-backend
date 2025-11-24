@@ -34,6 +34,7 @@ public class AuthController {
                 request.getBirthDate(),
                 request.getDriverLicenseNumber(),
                 request.getCompanyName()
+
         )
         );
     }

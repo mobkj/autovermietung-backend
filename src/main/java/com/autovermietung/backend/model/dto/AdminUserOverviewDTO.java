@@ -11,4 +11,6 @@ public class AdminUserOverviewDTO {
     private String lastName;
     private String email;
     private String role;
+    private String birthday;
+    private String driverLicenseNumber;
 }
