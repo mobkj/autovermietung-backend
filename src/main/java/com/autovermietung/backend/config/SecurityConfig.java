@@ -7,6 +7,7 @@ import com.autovermietung.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -39,7 +40,6 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -48,10 +48,18 @@ public class SecurityConfig {
 
                         // Öffentliche Endpunkte
                         .requestMatchers("/auth/**").permitAll()
-                        // Admin Bereich
-                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/uploads/**").permitAll()
 
-                        // Alle anderen Endpunkte benötigen Login
+                        // PUBLIC Fahrzeuge (ohne Login)
+                        .requestMatchers(HttpMethod.GET, "/api/fahrzeuge/**").permitAll()
+
+                        // Admin Bereich
+                        .requestMatchers("/api/admin/**")
+                        .hasAnyAuthority("ADMIN", "ROLE_ADMIN")
+                        // alternativ falls du ROLE_... nutzt:
+                        // .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                        // Rest braucht Login
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -60,10 +68,18 @@ public class SecurityConfig {
     }
 
 
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+
+        // localhost + Heimnetz (Handy/iPad)
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:5173",
+                "http://192.168.178.128:5173",
+                "http://10.0.*.*:5173"
+        ));
+
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -72,6 +88,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
