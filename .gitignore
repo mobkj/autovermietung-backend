@@ -34,3 +34,4 @@ build/
 
 ### Fahrzeugbilder (lokal, nicht versionieren) ###
 src/main/resources/static/fahrzeug-bilder/
+uploads/fahrzeuge

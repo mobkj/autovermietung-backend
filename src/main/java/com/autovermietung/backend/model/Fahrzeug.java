@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name="fahrzeug")
@@ -39,10 +41,16 @@ public class Fahrzeug {
 
     private BigDecimal kaution;
 
-    private String bildUrl;
-
     @Enumerated(EnumType.STRING)
     private FahrzeugStatus status = FahrzeugStatus.AKTIV;
+
+    @OneToMany(
+            mappedBy = "fahrzeug",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    @OrderBy("sortierung ASC")
+    private List<FahrzeugBild> bilder = new ArrayList<>();
 }
 
 

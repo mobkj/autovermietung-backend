@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @AllArgsConstructor
@@ -28,7 +29,7 @@ public class FahrzeugAntwortDTO {
     private Integer freiKmProTag;
     private BigDecimal kaution;
 
-    private String bildUrl;
+    private List<FahrzeugBildAntwortDTO> bilder;
     private String status;
 }
 

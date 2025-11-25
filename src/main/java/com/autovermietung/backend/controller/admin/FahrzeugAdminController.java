@@ -6,16 +6,12 @@ import com.autovermietung.backend.model.dto.FahrzeugUpdateDTO;
 import com.autovermietung.backend.service.FahrzeugService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Objects;
-
+import java.io.IOException;
 import java.util.List;
 
 @RestController
@@ -37,9 +33,69 @@ public class FahrzeugAdminController {
         return service.alle();
     }
 
-    @PostMapping("/{id}/bild")
-    public ResponseEntity<FahrzeugAntwortDTO> uploadBild(
+    /** Admin holt ein Fahrzeug per ID */
+    @GetMapping("/{id}")
+    public ResponseEntity<FahrzeugAntwortDTO> eins(@PathVariable Long id) {
+        return service.eins(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Admin aktualisiert Stammdaten eines Fahrzeugs */
+    @PutMapping("/{id}")
+    public FahrzeugAntwortDTO update(@PathVariable Long id, @RequestBody FahrzeugUpdateDTO dto) {
+        return service.update(id, dto);
+    }
+
+    // =========================================================================
+    // BILDER: mehrere hinzufügen
+    // =========================================================================
+
+    /**
+     * Mehrere Bilder zu einem Fahrzeug hinzufügen.
+     * Frontend: FormData mit "files" (Array von Dateien)
+     * POST /api/admin/fahrzeuge/{id}/bilder
+     */
+    @PostMapping("/{id}/bilder")
+    public ResponseEntity<FahrzeugAntwortDTO> uploadBilder(
             @PathVariable Long id,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        try {
+            if (files == null || files.isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            // optional: check, dass alles Bilder sind
+            boolean hasNonImage = files.stream().anyMatch(f ->
+                    f.getContentType() == null || !f.getContentType().startsWith("image/")
+            );
+            if (hasNonImage) {
+                return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).build();
+            }
+
+            FahrzeugAntwortDTO updated = service.bilderHinzufuegen(id, files);
+            return ResponseEntity.ok(updated);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    // =========================================================================
+    // BILDER: ein einzelnes Bild ersetzen (z. B. Bild 2 von 4)
+    // =========================================================================
+
+    /**
+     * Ein bestehendes Bild ersetzen.
+     * PUT /api/admin/fahrzeuge/{fahrzeugId}/bilder/{bildId}
+     * Frontend: FormData mit "file"
+     */
+    @PutMapping("/{fahrzeugId}/bilder/{bildId}")
+    public ResponseEntity<FahrzeugAntwortDTO> updateBild(
+            @PathVariable Long fahrzeugId,
+            @PathVariable Long bildId,
             @RequestParam("file") MultipartFile file
     ) {
         try {
@@ -47,50 +103,19 @@ public class FahrzeugAdminController {
                 return ResponseEntity.badRequest().build();
             }
 
-            // optional: content-type check (nur bilder)
             if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
                 return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).build();
             }
 
-            // Ordner anlegen falls nicht da
-            Path uploadDir = Paths.get("uploads/fahrzeuge");
-            Files.createDirectories(uploadDir);
-
-            // Dateiname bauen
-            String original = Objects.requireNonNull(file.getOriginalFilename());
-            String ext = original.contains(".")
-                    ? original.substring(original.lastIndexOf("."))
-                    : ".jpg";
-
-            String filename = "fahrzeug-" + id + "-" + System.currentTimeMillis() + ext;
-
-            // Datei speichern
-            Path target = uploadDir.resolve(filename);
-            Files.copy(file.getInputStream(), target);
-
-            // URL in DB speichern
-            String bildUrl = "/uploads/fahrzeuge/" + filename;
-            FahrzeugAntwortDTO updated = service.updateBildUrl(id, bildUrl);
-
+            FahrzeugAntwortDTO updated = service.bildErsetzen(fahrzeugId, bildId, file);
             return ResponseEntity.ok(updated);
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (RuntimeException e) {
+            // z. B. Fahrzeug oder Bild nicht gefunden
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
-    }
-
-
-    @PutMapping("/{id}")
-    public FahrzeugAntwortDTO update(@PathVariable Long id, @RequestBody FahrzeugUpdateDTO dto) {
-        return service.update(id, dto);
-    }
-
-    /** Admin holt ein Fahrzeug per ID */
-    @GetMapping("/{id}")
-    public ResponseEntity<FahrzeugAntwortDTO> eins(@PathVariable Long id) {
-        return service.eins(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
     }
 }
