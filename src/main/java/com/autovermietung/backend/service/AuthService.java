@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -26,16 +27,26 @@ public class AuthService {
                                  String driverLicenseNumber, String companyName
     ) {
 
-        if (userRepository.existsByEmail(email)) {
-            throw new ApiException("Ein Benutzer mit dieser E-Mail existiert bereits.");
+
+        String normalizedEmail = normalizeEmail(email);
+
+        // 1) Validierung
+        if (normalizedEmail == null || normalizedEmail.isBlank()) {
+            throw new ApiException("E-Mail ist erforderlich.");
         }
+
+        // 2) Check: existiert schon?
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new ApiException("Es existiert bereits ein Account mit dieser E-Mail.");
+        }
+
 
         String hashedPassword = passwordEncoder.encode(password);
 
         User newUser = User.builder()
                 .firstName(firstName)
                 .lastName(lastName)
-                .email(email)
+                .email(normalizedEmail)
                 .password(hashedPassword)
                 .role(Role.CUSTOMER)
                 .phone(phone)
@@ -74,9 +85,12 @@ public class AuthService {
 
 
     // Login
+    // Login
     public AuthResponse login(String email, String password) {
 
-        Optional<User> userOpt = userRepository.findByEmail(email);
+        String normalizedEmail = normalizeEmail(email);
+
+        Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
         if (userOpt.isEmpty()) {
             throw new ApiException("Benutzer wurde nicht gefunden.");
@@ -100,7 +114,6 @@ public class AuthService {
                 .lastName(user.getLastName())
                 .email(user.getEmail())
                 .role(user.getRole())
-
                 .phone(user.getPhone())
                 .street(user.getStreet())
                 .houseNumber(user.getHouseNumber())
@@ -111,5 +124,11 @@ public class AuthService {
                 .driverLicenseNumber(user.getDriverLicenseNumber())
                 .companyName(user.getCompanyName())
                 .build();
+    }
+
+
+    private String normalizeEmail(String email) {
+        if (email == null) return null;
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 }

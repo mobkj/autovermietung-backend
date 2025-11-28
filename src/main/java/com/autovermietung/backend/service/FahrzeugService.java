@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import net.coobird.thumbnailator.Thumbnails;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -23,8 +24,14 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class FahrzeugService {
 
+    private static final long MAX_UPLOAD_BYTES = 25L * 1024 * 1024;// 25 MB
+    // ab dieser Größe wird komprimiert
+    private static final long COMPRESS_THRESHOLD_BYTES = 10L * 1024 * 1024; // 10 MB
+    private static final int MAX_WIDTH = 2560;
+    private static final int MAX_HEIGHT = 2560;
     private final FahrzeugRepository repo;
     private final FahrzeugBildRepository bildRepo;
+
 
     // =========================================================================
     // FAHRZEUG ANLEGEN
@@ -48,6 +55,27 @@ public class FahrzeugService {
         Fahrzeug saved = repo.save(f);
         return toDTO(saved);
     }
+
+    private void saveImageWithOptionalCompression(MultipartFile file, Path target) throws IOException {
+        long size = file.getSize();
+
+        // Bis 10 MB → direkt speichern
+        if (size <= COMPRESS_THRESHOLD_BYTES) {
+            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+
+        // Ab 10 MB → skalieren / komprimieren
+        try (var in = file.getInputStream();
+             var out = Files.newOutputStream(target,
+                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            Thumbnails.of(in)
+                    .size(MAX_WIDTH, MAX_HEIGHT)
+                    .outputQuality(0.8f)
+                    .toOutputStream(out);
+        }
+    }
+
 
     // =========================================================================
     // LISTEN / EINZELNES FAHRZEUG
@@ -135,13 +163,21 @@ public class FahrzeugService {
         for (int i = 0; i < files.size(); i++) {
             MultipartFile file = files.get(i);
 
+            if (file.isEmpty()) {
+                throw new IllegalArgumentException("Eine der Dateien ist leer.");
+            }
+            if (file.getSize() > MAX_UPLOAD_BYTES) {
+                throw new IllegalArgumentException("Eine Datei ist zu groß (max. 25 MB pro Bild).");
+            }
+
+
             String extension = getExtension(file.getOriginalFilename());
             int sortierung = startIndex + i;
 
             String filename = "bild" + sortierung + "_" + fahrzeugId + extension;
             Path target = fahrzeugOrdner.resolve(filename);
 
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            saveImageWithOptionalCompression(file, target);
 
             FahrzeugBild bild = new FahrzeugBild();
             bild.setFahrzeug(f);
@@ -169,6 +205,15 @@ public class FahrzeugService {
      */
     @Transactional
     public FahrzeugAntwortDTO bildErsetzen(Long fahrzeugId, Long bildId, MultipartFile file) throws IOException {
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Keine Datei übergeben.");
+        }
+        if (file.getSize() > MAX_UPLOAD_BYTES) {
+            throw new IllegalArgumentException("Datei ist zu groß (max. 25 MB pro Bild).");
+        }
+
+
         Fahrzeug f = repo.findById(fahrzeugId)
                 .orElseThrow(() -> new RuntimeException("Fahrzeug nicht gefunden"));
 
@@ -195,7 +240,7 @@ public class FahrzeugService {
             } catch (IOException ignored) {}
         }
 
-        Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+        saveImageWithOptionalCompression(file, target);
 
         bild.setDateiname(newFilename);
         bildRepo.save(bild);

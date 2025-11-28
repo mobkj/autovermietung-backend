@@ -25,5 +25,5 @@ server:
 
 app:
   jwt:
-    secret: "eW91YXJlZ29atnRlZHN1cGVyZ2VoZWltZXNLZXkxMjM0NTY3ODk=" # 32+ Zeichen Base64
+    secret: Vqa6JP4YddRBAu9zuQAlRCmiq7wx21zjOTbeqaCDSAYh7rRpocbJ5aNLyNy/kvzlcCJ9xitP2IfjpH6mpLKXLA== # 32+ Zeichen Base64
     expiration-ms: 86400000 # 24 Stunden

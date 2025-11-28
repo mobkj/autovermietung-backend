@@ -31,9 +31,9 @@ public class BuchungController {
         return buchungService.alleFuerFahrzeug(fahrzeugId);
     }
 
-    @GetMapping("/api/buchungen/user/{userId}")
-    public List<BuchungAntwortDTO> kundenBuchungen(@PathVariable Long userId) {
-        return buchungService.alleFuerUser(userId);
+    @GetMapping("/api/buchungen/me")
+    public List<BuchungAntwortDTO> meineBuchungen() {
+        return buchungService.alleFuerCurrentUser();
     }
 
     // =========================
@@ -66,7 +66,4 @@ public class BuchungController {
     public BuchungAntwortDTO stornieren(@PathVariable Long id) {
         return buchungService.stornieren(id);
     }
-
-
-
 }

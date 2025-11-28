@@ -8,6 +8,9 @@ import com.autovermietung.backend.repository.FahrzeugRepository;
 import com.autovermietung.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,6 +18,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class BuchungService {
 
     private final BuchungRepository buchungRepo;
@@ -33,8 +37,9 @@ public class BuchungService {
             throw new IllegalArgumentException("Startdatum muss vor Enddatum liegen.");
         }
 
-        Fahrzeug fahrzeug = fahrzeugRepo.findById(dto.getFahrzeugId())
+        Fahrzeug fahrzeug = fahrzeugRepo.findByIdForUpdate(dto.getFahrzeugId())
                 .orElseThrow(() -> new RuntimeException("Fahrzeug nicht gefunden"));
+
 
         User user = null;
         if (dto.getUserId() != null) {
@@ -116,6 +121,27 @@ public class BuchungService {
                 .toList();
     }
 
+    // =========================
+// BUCHUNGEN FÜR AKTUELLEN USER (aus JWT)
+// =========================
+    public List<BuchungAntwortDTO> alleFuerCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new RuntimeException("Nicht eingeloggt.");
+        }
+
+        // In deinem JWT ist die Email als Subject gesetzt
+        String email = auth.getName();
+
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User zum Token nicht gefunden."));
+
+        return buchungRepo.findAllByUser_Id(user.getId()).stream()
+                .map(this::toDTO)
+                .toList();
+    }
+
+
 
     public BuchungAntwortDTO adminBlockieren(BuchungAnlegenDTO dto) {
         if (dto.getStartDatum() == null || dto.getEndDatum() == null) {
@@ -126,8 +152,9 @@ public class BuchungService {
             throw new IllegalArgumentException("Startdatum muss vor Enddatum liegen.");
         }
 
-        Fahrzeug fahrzeug = fahrzeugRepo.findById(dto.getFahrzeugId())
+        Fahrzeug fahrzeug = fahrzeugRepo.findByIdForUpdate(dto.getFahrzeugId())
                 .orElseThrow(() -> new RuntimeException("Fahrzeug nicht gefunden"));
+
 
         LocalDateTime now = LocalDateTime.now();
 

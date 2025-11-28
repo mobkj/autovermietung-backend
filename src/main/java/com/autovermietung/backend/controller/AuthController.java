@@ -5,6 +5,7 @@ import com.autovermietung.backend.model.dto.AuthResponse;
 import com.autovermietung.backend.model.dto.LoginRequest;
 import com.autovermietung.backend.model.dto.RegisterRequest;
 import com.autovermietung.backend.service.AuthService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +20,7 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         return ResponseEntity.ok(authService.register(
                 request.getFirstName(),
                 request.getLastName(),
@@ -41,16 +42,11 @@ public class AuthController {
 
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(
                 request.getEmail(),
                 request.getPassword()
         ));
-    }
-
-    @GetMapping("/me")
-    public ResponseEntity<String> me() {
-        return ResponseEntity.ok("Token valid bro 🔥");
     }
 
 }

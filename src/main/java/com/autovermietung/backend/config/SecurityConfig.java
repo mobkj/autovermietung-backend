@@ -61,9 +61,7 @@ public class SecurityConfig {
 
                         // Admin Bereich
                         .requestMatchers("/api/admin/**")
-                        .hasAnyAuthority("ADMIN", "ROLE_ADMIN")
-                        // alternativ falls du ROLE_... nutzt:
-                        // .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .hasAuthority("ROLE_ADMIN")
 
                         // Rest braucht Login
                         .anyRequest().authenticated()
@@ -83,8 +81,7 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
                 "http://192.168.178.128:5173",
-                "https://ngan-unsettled-uninceptively.ngrok-free.dev",
-                "http://10.0.*.*:5173"
+                "https://ngan-unsettled-uninceptively.ngrok-free.dev"
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
