@@ -31,3 +31,4 @@ app:
 stripe:
   secret-key: sk_test_51SYW7k7cWPpddEzaUiMoHrXy9Zxqx8dMtsmDmNlP8dX4q9AWfQlTcjkGys8xQazxNFMqjWLD7BpAkVtiQEBN7XFb0067TJZtfx
   public-key: pk_test_51SYW7k7cWPpddEzaLzJ7bYXOpu4f9D1734k7WYEFFbQ51VrkYALdm8sgJRnP0QgHyrXEDxy8tVRDPYMjq5a8gaOu00DpviD6vk
+  webhookSecret: whsec_3XmiblPX86CUdjKQnaxjCZYxEquemgOS

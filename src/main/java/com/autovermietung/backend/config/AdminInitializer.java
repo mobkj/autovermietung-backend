@@ -25,6 +25,18 @@ public class AdminInitializer {
                     .build();
 
             userRepository.save(admin);
+
+            User customer = User.builder()
+                    .firstName("Admin")
+                    .lastName("Mazari")
+                    .email("admin@mazari.dee")
+                    .password(encoder.encode("Admin123!")) // Passwort später anpassen!
+                    .driverLicenseNumber("L8KSJQOD")
+                    .birthDate("10.09.2003")
+                    .role(Role.CUSTOMER)
+                    .build();
+
+            userRepository.save(customer);
             System.out.println("⚠️ Admin account created: admin@mazari.de / Admin123! " + admin.toString());
 
         }

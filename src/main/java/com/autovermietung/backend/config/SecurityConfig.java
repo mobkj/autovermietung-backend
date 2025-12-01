@@ -60,8 +60,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").permitAll()
 
                         // Admin Bereich
-                        .requestMatchers("/api/admin/**")
+                        .requestMatchers(HttpMethod.POST, "/api/admin/**")
                         .hasAuthority("ROLE_ADMIN")
+
+                        .requestMatchers("/api/stripe/webhook").permitAll()
 
                         // Rest braucht Login
                         .anyRequest().authenticated()
@@ -80,6 +82,7 @@ public class SecurityConfig {
         // localhost + Heimnetz (Handy/iPad)
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
+                "http://localhost:8080",
                 "http://192.168.178.128:5173",
                 "https://ngan-unsettled-uninceptively.ngrok-free.dev"
         ));

@@ -52,11 +52,28 @@ public class Buchung {
     // ⏱ bis wann der Slot reserviert ist (z.B. jetzt + 5 Minuten)
     private LocalDateTime reserviertBis;
 
+    // in Buchung.java
+
+    @Column(name = "stripe_session_id", length = 255)
+    private String stripeSessionId;
+
+    @Column(name = "stripe_payment_intent_id", length = 255)
+    private String stripePaymentIntentId;
+
+    @Column(name = "refund_amount")
+    private BigDecimal refundAmount;
+
+    @Column(name = "storniert_am")
+    private LocalDateTime storniertAm;
+
+
     @Column(precision = 10, scale = 2)
     private BigDecimal gesamtPreis;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+
 
     @PrePersist
     protected void onCreate() {

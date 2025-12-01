@@ -55,7 +55,7 @@ public class PaymentController {
      * 1. Holt die Buchung
      * 2. Prüft Rechte (Customer nur eigene Buchung, Admin alles)
      * 3. Prüft Status (nicht STORNIERT / BEZAHLT)
-     * 4. Berechnet Preis
+     * 4. Berechnet Preis (Brutto)
      * 5. Erzeugt Stripe Checkout Session
      */
     @PostMapping("/create-checkout-session")
@@ -98,17 +98,18 @@ public class PaymentController {
         }
 
         // 5) Preis berechnen (inkl. Brutto)
-        Integer freieKmPaketReq = request.getFreieKmPaket();
-        if (freieKmPaketReq == null) {
-            throw new ApiException("Kilometerpaket fehlt.");
-        }
-        int freieKmPaket = freieKmPaketReq; // explizit zu primitive int
+        int freieKmPaket = request.getFreieKmPaket();
 
         BuchungPreisAntwortDTO preis = preisBerechnungService
-                .berechnePreis(buchung, freieKmPaket);
+                .berechnePreis(buchung, freieKmPaket); // bringService kommt aus der Buchung
 
         // Stripe erwartet Betrag in CENT (Brutto)
-        long amountInCents = preis.getGesamtBrutto()
+        BigDecimal gesamtBrutto = preis.getGesamtBrutto();
+        if (gesamtBrutto == null || gesamtBrutto.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException("Ungültiger Gesamtpreis für die Buchung.");
+        }
+
+        long amountInCents = gesamtBrutto
                 .multiply(BigDecimal.valueOf(100))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValueExact();
@@ -129,6 +130,9 @@ public class PaymentController {
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
+                // Kunde bekommt von Stripe eine Zahlungsquittung
+                .setCustomerEmail(buchung.getKundeEmail())
+                .setBillingAddressCollection(SessionCreateParams.BillingAddressCollection.REQUIRED)
                 .addLineItem(
                         SessionCreateParams.LineItem.builder()
                                 .setQuantity(1L)
@@ -141,6 +145,7 @@ public class PaymentController {
                                                                 .setName("Miete " +
                                                                         buchung.getFahrzeug().getMarke() + " " +
                                                                         buchung.getFahrzeug().getModell())
+                                                                .setDescription("Buchung #" + buchung.getBuchungsNummer())
                                                                 .build()
                                                 )
                                                 .build()

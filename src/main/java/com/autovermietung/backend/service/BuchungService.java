@@ -11,6 +11,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.autovermietung.backend.exception.ApiException;
+import com.stripe.model.Refund;
+import com.stripe.param.RefundCreateParams;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.temporal.ChronoUnit;
+
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -135,7 +143,6 @@ public class BuchungService {
 
         User user = userRepo.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User zum Token nicht gefunden."));
-
         return buchungRepo.findAllByUser_Id(user.getId()).stream()
                 .map(this::toDTO)
                 .toList();
@@ -266,6 +273,56 @@ public class BuchungService {
         );
     }
 
+    public BuchungAntwortDTO stornierenUser(Long buchungId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ApiException("Nicht eingeloggt.");
+        }
+
+        String email = auth.getName();
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new ApiException("Benutzer nicht gefunden."));
+
+        Buchung b = buchungRepo.findById(buchungId)
+                .orElseThrow(() -> new ApiException("Buchung nicht gefunden."));
+
+        if (b.getUser() == null || !b.getUser().getId().equals(user.getId())) {
+            throw new ApiException("Du kannst nur deine eigenen Buchungen stornieren.");
+        }
+
+        if (b.getStatus() == BuchungsStatus.STORNIERT) {
+            return toDTO(b);
+        }
+
+        // Unbezahlte Reservierung -> einfach freigeben
+        if (b.getStatus() == BuchungsStatus.RESERVIERT) {
+            b.setStatus(BuchungsStatus.STORNIERT);
+            b.setReserviertBis(null);
+            b.setStorniertAm(LocalDateTime.now());
+            Buchung saved = buchungRepo.save(b);
+            return toDTO(saved);
+        }
+
+        // Bezahlte Buchung -> Refund nach Regel
+        if (b.getStatus() == BuchungsStatus.BEZAHLT) {
+            BigDecimal refundAmount = berechneStornoRefundBetrag(b);
+            fuehreStripeRefundDurch(b, refundAmount);
+
+            b.setStatus(BuchungsStatus.STORNIERT);
+            b.setReserviertBis(null);
+            Buchung saved = buchungRepo.save(b);
+            return toDTO(saved);
+        }
+
+        // fallback
+        b.setStatus(BuchungsStatus.STORNIERT);
+        b.setReserviertBis(null);
+        b.setStorniertAm(LocalDateTime.now());
+        Buchung saved = buchungRepo.save(b);
+        return toDTO(saved);
+    }
+
+
     private String generateBuchungsNummer(Buchung buchung) {
         LocalDate heute = LocalDate.now();
         int year = heute.getYear();
@@ -273,6 +330,71 @@ public class BuchungService {
 
         // MZ-202511-000123 z.B.
         return String.format("MZ-%d%02d-%06d", year, month, buchung.getId());
+    }
+
+    private BigDecimal berechneStornoRefundBetrag(Buchung b) {
+        if (b.getGesamtPreis() == null || b.getStartDatum() == null) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal full = b.getGesamtPreis();
+
+        LocalDate startDate = b.getStartDatum().toLocalDate();
+        LocalDate heute = LocalDate.now();
+
+        long daysUntilStart = ChronoUnit.DAYS.between(heute, startDate);
+
+        // 14 Tage oder mehr vorher -> voller Betrag minus 2 €
+        if (daysUntilStart >= 14) {
+            BigDecimal fee = new BigDecimal("2.00");
+            BigDecimal refund = full.subtract(fee);
+            if (refund.compareTo(BigDecimal.ZERO) < 0) {
+                return BigDecimal.ZERO;
+            }
+            return refund.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        // 0–13 Tage vorher -> 50 %
+        if (daysUntilStart >= 0) {
+            return full.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+        }
+
+        // Mietbeginn schon vorbei -> kein Refund
+        return BigDecimal.ZERO;
+    }
+
+    private void fuehreStripeRefundDurch(Buchung b, BigDecimal refundAmount) {
+        if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return; // nichts zu erstatten
+        }
+
+        if (b.getStripePaymentIntentId() == null) {
+            System.out.println("[Storno] Keine Stripe PaymentIntent ID vorhanden, kann nicht refunden.");
+            return;
+        }
+
+        try {
+            long amountInCents = refundAmount
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValueExact();
+
+            RefundCreateParams params = RefundCreateParams.builder()
+                    .setPaymentIntent(b.getStripePaymentIntentId())
+                    .setAmount(amountInCents)
+                    .build();
+
+            Refund refund = Refund.create(params);
+
+            b.setRefundAmount(refundAmount);
+            b.setStorniertAm(LocalDateTime.now());
+            // Falls du das Refund-Objekt noch tracken willst:
+            // b.setStripeRefundId(refund.getId());
+            System.out.println("[Storno] Refund erstellt: " + refund.getId()
+                    + " über " + refundAmount + " EUR");
+        } catch (Exception e) {
+            throw new ApiException("Die Rückerstattung über Stripe ist fehlgeschlagen: " + e.getMessage());
+        }
     }
 
 
