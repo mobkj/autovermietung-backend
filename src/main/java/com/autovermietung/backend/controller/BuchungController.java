@@ -63,7 +63,12 @@ public class BuchungController {
     // BUCHUNG STORNIEREN
     // =========================
     @PutMapping("/api/buchungen/{id}/stornieren")
-    public BuchungAntwortDTO stornieren(@PathVariable Long id) {
+    public BuchungAntwortDTO stornierenUser(@PathVariable Long id) {
+        return buchungService.stornieren(id);
+    }
+
+    @PutMapping("/api/admin/buchungen/{id}/stornieren")
+    public BuchungAntwortDTO stornierenAdmin(@PathVariable Long id) {
         return buchungService.stornieren(id);
     }
 }

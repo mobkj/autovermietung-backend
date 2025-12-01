@@ -8,7 +8,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -27,45 +29,71 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 1. AUTH-ROUTES überspringen (ganz wichtig!)
         String path = request.getServletPath();
-        if (path.startsWith("/auth")) {
+
+        // 1️⃣ Auth-Routen überspringen
+        if (path.startsWith("/auth") || path.startsWith("/api/auth")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 2. Header prüfen
+        // 2️⃣ Authorization-Header prüfen
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            // kein Token → Request bleibt anonym
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 3. Token holen
+        // 3️⃣ Token extrahieren
         String token = authHeader.substring(7);
 
-        // 4. Email (username) extrahieren
-        String email = jwtService.extractUsername(token);
+        String email;
+        try {
+            // kann fehlschlagen, wenn Token kaputt/abgelaufen
+            email = jwtService.extractUsername(token);
+        } catch (Exception ex) {
+            System.out.println("[JWT] Ungültiges oder abgelaufenes Token: " + ex.getMessage());
+            // wir brechen NICHT ab, sondern lassen den Request anonym weiterlaufen
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-        // 5. Wenn gültig → User laden + Authentication setzen
+        // 4️⃣ Nur authentifizieren, wenn noch kein User im Kontext ist
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            try {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
-            UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                boolean valid;
+                if (userDetails instanceof CustomUserDetails custom) {
+                    valid = jwtService.isTokenValid(token, custom.getUser());
+                } else {
+                    valid = jwtService.isTokenValid(token, null);
+                }
 
-            if (jwtService.isTokenValid(token, ((CustomUserDetails) userDetails).getUser())) {
+                if (valid) {
+                    UsernamePasswordAuthenticationToken auth =
+                            new UsernamePasswordAuthenticationToken(
+                                    userDetails,
+                                    null,
+                                    userDetails.getAuthorities()
+                            );
 
-                UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
+                    auth.setDetails(
+                            new WebAuthenticationDetailsSource().buildDetails(request)
+                    );
 
-                SecurityContextHolder.getContext().setAuthentication(auth);
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            } catch (UsernameNotFoundException ex) {
+                // 🔥 letzter kritischer Punkt: User existiert nicht -> NICHT crashen!
+                System.out.println("[JWT] User aus Token existiert nicht mehr: " + email);
+                // keine Auth setzen, Request bleibt anonym
             }
         }
 
+        // 5️⃣ Immer weiterfiltern, egal was war
         filterChain.doFilter(request, response);
     }
 }

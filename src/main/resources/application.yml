@@ -27,3 +27,7 @@ app:
   jwt:
     secret: Vqa6JP4YddRBAu9zuQAlRCmiq7wx21zjOTbeqaCDSAYh7rRpocbJ5aNLyNy/kvzlcCJ9xitP2IfjpH6mpLKXLA== # 32+ Zeichen Base64
     expiration-ms: 86400000 # 24 Stunden
+
+stripe:
+  secret-key: sk_test_51SYW7k7cWPpddEzaUiMoHrXy9Zxqx8dMtsmDmNlP8dX4q9AWfQlTcjkGys8xQazxNFMqjWLD7BpAkVtiQEBN7XFb0067TJZtfx
+  public-key: pk_test_51SYW7k7cWPpddEzaLzJ7bYXOpu4f9D1734k7WYEFFbQ51VrkYALdm8sgJRnP0QgHyrXEDxy8tVRDPYMjq5a8gaOu00DpviD6vk
