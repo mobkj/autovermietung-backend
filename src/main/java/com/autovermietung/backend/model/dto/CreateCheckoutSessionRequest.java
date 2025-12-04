@@ -6,5 +6,6 @@ import lombok.Data;
 public class CreateCheckoutSessionRequest {
     private Long buchungId;
     private Integer freieKmPaket;
+    private Boolean bringService;
 }
 

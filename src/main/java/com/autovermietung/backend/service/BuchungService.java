@@ -50,9 +50,12 @@ public class BuchungService {
 
 
         User user = null;
+        Role role = null;
+
         if (dto.getUserId() != null) {
             user = userRepo.findById(dto.getUserId())
                     .orElseThrow(() -> new RuntimeException("User nicht gefunden"));
+            role = user.getRole();
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -90,6 +93,17 @@ public class BuchungService {
             throw new RuntimeException("Das Fahrzeug ist in diesem Zeitraum bereits gebucht oder reserviert.");
         }
 
+        BuchungsStatus status;
+        LocalDateTime reserviertBis;
+        if (role == Role.ADMIN) {
+            // 🔥 Admin blockt den Zeitraum sofort "hart"
+            status = BuchungsStatus.BEZAHLT;
+            reserviertBis = null;
+        } else {
+            // Normaler Kunde → weiche Reservierung mit 10-Minuten-Hold
+            status = BuchungsStatus.RESERVIERT;
+            reserviertBis = now.plusMinutes(10);
+        }
         // =========================
         // Buchung speichern
         // =========================
@@ -102,9 +116,10 @@ public class BuchungService {
                 .startDatum(dto.getStartDatum())
                 .endDatum(dto.getEndDatum())
                 .bringService(dto.isBringService())
-                .status(BuchungsStatus.RESERVIERT)
-                .reserviertBis(now.plusMinutes(5)) // 5-Minuten-Hold
+                .status(status)             // ✅ benutze die berechneten Werte
+                .reserviertBis(reserviertBis)
                 .build();
+
 
         Buchung saved = buchungRepo.save(buchung);
         if (saved.getBuchungsNummer() == null) {
@@ -116,18 +131,30 @@ public class BuchungService {
 
     public List<BuchungAntwortDTO> aktiveBuchungenFuerFahrzeug(Long fahrzeugId) {
         LocalDateTime now = LocalDateTime.now();
-        List<BuchungsStatus> aktive = List.of(BuchungsStatus.RESERVIERT, BuchungsStatus.BEZAHLT);
+
+        // Wir wollen alle aktiven Buchungen:
+        // - BEZAHLT → immer
+        // - RESERVIERT → nur wenn reserviertBis noch in der Zukunft oder null (Admin-Block)
+        List<BuchungsStatus> aktive = List.of(
+                BuchungsStatus.RESERVIERT,
+                BuchungsStatus.BEZAHLT
+        );
 
         List<Buchung> list = buchungRepo.findAllByFahrzeug_IdAndStatusIn(fahrzeugId, aktive);
 
         return list.stream()
-                // abgelaufene Reservierungen raus
-                .filter(b -> !(b.getStatus() == BuchungsStatus.RESERVIERT
-                        && b.getReserviertBis() != null
-                        && b.getReserviertBis().isBefore(now)))
+                // abgelaufene Reservierungen rauswerfen
+                .filter(b -> !(
+                        b.getStatus() == BuchungsStatus.RESERVIERT
+                                && b.getReserviertBis() != null
+                                && b.getReserviertBis().isBefore(now)
+                ))
                 .map(this::toDTO)
                 .toList();
     }
+
+
+
 
     // =========================
 // BUCHUNGEN FÜR AKTUELLEN USER (aus JWT)
@@ -191,17 +218,22 @@ public class BuchungService {
             throw new RuntimeException("Das Fahrzeug ist in diesem Zeitraum bereits vergeben.");
         }
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User adminUser = userRepo.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Admin nicht gefunden"));
+
         // Admin-Block: RESERVIERT, aber ohne 5-Minuten-Hold
         Buchung buchung = Buchung.builder()
                 .fahrzeug(fahrzeug)
-                .user(null) // oder spezifischer Admin-User später
+                .user(adminUser) // oder spezifischer Admin-User später
                 .kundeName(dto.getKundeName() != null ? dto.getKundeName() : "Interne Reservierung")
                 .kundeEmail(dto.getKundeEmail())
                 .kundePhone(dto.getKundePhone())
                 .startDatum(dto.getStartDatum())
                 .endDatum(dto.getEndDatum())
                 .bringService(dto.isBringService())
-                .status(BuchungsStatus.RESERVIERT)
+                .status(BuchungsStatus.BEZAHLT)
                 .reserviertBis(null) // blockiert dauerhaft, bis storniert/bezahlt
                 .build();
 
@@ -396,6 +428,39 @@ public class BuchungService {
             throw new ApiException("Die Rückerstattung über Stripe ist fehlgeschlagen: " + e.getMessage());
         }
     }
+
+    public void abbrechenOhneStorno(Long buchungId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ApiException("Nicht eingeloggt.");
+        }
+
+        String email = auth.getName();
+        User user = userRepo.findByEmail(email)
+                .orElseThrow(() -> new ApiException("Benutzer nicht gefunden."));
+
+        Buchung b = buchungRepo.findById(buchungId)
+                .orElseThrow(() -> new ApiException("Buchung nicht gefunden."));
+
+        // Nur eigene Buchung abbrechen
+        if (b.getUser() == null || !b.getUser().getId().equals(user.getId())) {
+            throw new ApiException("Du kannst nur deine eigenen Buchungen abbrechen.");
+        }
+
+        // WICHTIG: Nur unverbindliche Reservierungen (unbezahlt)
+        if (b.getStatus() != BuchungsStatus.RESERVIERT) {
+            throw new ApiException("Nur unverbindliche Reservierungen können abgebrochen werden.");
+        }
+
+        // Safety: falls da schon Payment-Infos drin sind → lieber stornieren
+        if (b.getStripePaymentIntentId() != null || b.getGesamtPreis() != null) {
+            throw new ApiException("Diese Buchung scheint bereits bezahlt zu sein. Bitte stornieren.");
+        }
+
+        // 👉 Komplett löschen – als hätte es die Buchung nie gegeben
+        buchungRepo.delete(b);
+    }
+
 
 
 }

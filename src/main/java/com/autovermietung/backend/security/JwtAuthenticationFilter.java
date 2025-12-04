@@ -31,8 +31,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getServletPath();
 
-        // 1️⃣ Auth-Routen überspringen
-        if (path.startsWith("/auth") || path.startsWith("/api/auth")) {
+        // ✅ Nur Login & Register ohne JWT behandeln
+        if (path.equals("/auth/login") || path.equals("/auth/register")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -51,16 +51,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String email;
         try {
-            // kann fehlschlagen, wenn Token kaputt/abgelaufen
             email = jwtService.extractUsername(token);
         } catch (Exception ex) {
             System.out.println("[JWT] Ungültiges oder abgelaufenes Token: " + ex.getMessage());
-            // wir brechen NICHT ab, sondern lassen den Request anonym weiterlaufen
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 4️⃣ Nur authentifizieren, wenn noch kein User im Kontext ist
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
@@ -73,27 +70,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 if (valid) {
-                    UsernamePasswordAuthenticationToken auth =
+                    UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails,
                                     null,
                                     userDetails.getAuthorities()
                             );
 
-                    auth.setDetails(
+                    authToken.setDetails(
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
 
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             } catch (UsernameNotFoundException ex) {
-                // 🔥 letzter kritischer Punkt: User existiert nicht -> NICHT crashen!
                 System.out.println("[JWT] User aus Token existiert nicht mehr: " + email);
-                // keine Auth setzen, Request bleibt anonym
             }
         }
 
-        // 5️⃣ Immer weiterfiltern, egal was war
         filterChain.doFilter(request, response);
     }
+
 }

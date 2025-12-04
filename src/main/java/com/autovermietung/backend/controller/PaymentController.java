@@ -39,25 +39,14 @@ public class PaymentController {
     @Value("${stripe.secret-key}")
     private String stripeSecretKey;
 
-    // TODO: für Prod in application-prod.yml auslagern
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
 
     @PostConstruct
     public void init() {
-        // Stripe-API-Key setzen
         Stripe.apiKey = stripeSecretKey;
     }
 
-    /**
-     * Body: { buchungId: number, freieKmPaket: number }
-     *
-     * 1. Holt die Buchung
-     * 2. Prüft Rechte (Customer nur eigene Buchung, Admin alles)
-     * 3. Prüft Status (nicht STORNIERT / BEZAHLT)
-     * 4. Berechnet Preis (Brutto)
-     * 5. Erzeugt Stripe Checkout Session
-     */
     @PostMapping("/create-checkout-session")
     @PreAuthorize("hasAnyAuthority('ROLE_CUSTOMER','ROLE_ADMIN')")
     public ResponseEntity<Map<String, Object>> createCheckoutSession(
@@ -84,6 +73,34 @@ public class PaymentController {
 
         boolean isAdmin = currentUser.getRole() == Role.ADMIN;
 
+        // 🔥 Stripe-Customer sicherstellen (für Prefill der Adresse)
+        String stripeCustomerId = currentUser.getStripeCustomerId();
+
+        if (stripeCustomerId == null) {
+            var customerParams = com.stripe.param.CustomerCreateParams.builder()
+                    .setEmail(currentUser.getEmail())
+                    .setName((currentUser.getFirstName() + " " + currentUser.getLastName()).trim())
+                    .setAddress(
+                            com.stripe.param.CustomerCreateParams.Address.builder()
+                                    .setLine1(buildStrasse(currentUser)) // "Straße Hausnummer"
+                                    .setPostalCode(currentUser.getPostalCode())
+                                    .setCity(currentUser.getCity())
+                                    .setCountry(
+                                            currentUser.getCountry() != null
+                                                    ? currentUser.getCountry()
+                                                    : "DE"
+                                    )
+                                    .build()
+                    )
+                    .build();
+
+            com.stripe.model.Customer customer = com.stripe.model.Customer.create(customerParams);
+            stripeCustomerId = customer.getId();
+
+            currentUser.setStripeCustomerId(stripeCustomerId);
+            userRepository.save(currentUser);
+        }
+
         // 3) Wenn kein Admin: nur eigene Buchung darf bezahlt werden
         if (!isAdmin && !buchung.getUser().getId().equals(currentUser.getId())) {
             throw new ApiException("Du darfst nur deine eigenen Buchungen bezahlen.");
@@ -100,10 +117,14 @@ public class PaymentController {
         // 5) Preis berechnen (inkl. Brutto)
         int freieKmPaket = request.getFreieKmPaket();
 
-        BuchungPreisAntwortDTO preis = preisBerechnungService
-                .berechnePreis(buchung, freieKmPaket); // bringService kommt aus der Buchung
+        // bringService aus Request, fallback: aus Buchung (z.B. später speichern)
+        boolean bringService = request.getBringService() != null
+                ? request.getBringService()
+                : (buchung.isBringService()); // falls du das Feld in Buchung nutzt
 
-        // Stripe erwartet Betrag in CENT (Brutto)
+        BuchungPreisAntwortDTO preis = preisBerechnungService
+                .berechnePreis(buchung, freieKmPaket, bringService); // bringService kommt aus der Buchung
+
         BigDecimal gesamtBrutto = preis.getGesamtBrutto();
         if (gesamtBrutto == null || gesamtBrutto.compareTo(BigDecimal.ZERO) <= 0) {
             throw new ApiException("Ungültiger Gesamtpreis für die Buchung.");
@@ -120,6 +141,7 @@ public class PaymentController {
         metadata.put("buchungsNummer", buchung.getBuchungsNummer());
         metadata.put("fahrzeugId", String.valueOf(buchung.getFahrzeug().getId()));
         metadata.put("freieKmPaket", String.valueOf(request.getFreieKmPaket()));
+        metadata.put("bringService", String.valueOf(bringService));
         metadata.put("kundeEmail", buchung.getKundeEmail());
 
         String successUrl = frontendBaseUrl + "/checkout-success?session_id={CHECKOUT_SESSION_ID}";
@@ -130,9 +152,18 @@ public class PaymentController {
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
-                // Kunde bekommt von Stripe eine Zahlungsquittung
-                .setCustomerEmail(buchung.getKundeEmail())
+
+                // Prefilled mit User-Daten
+                .setCustomer(stripeCustomerId)
+
+                // Rechnungsadresse wird angezeigt & kann geändert werden
                 .setBillingAddressCollection(SessionCreateParams.BillingAddressCollection.REQUIRED)
+                .setCustomerUpdate(
+                        SessionCreateParams.CustomerUpdate.builder()
+                                .setAddress(SessionCreateParams.CustomerUpdate.Address.AUTO)
+                                .build()
+                )
+
                 .addLineItem(
                         SessionCreateParams.LineItem.builder()
                                 .setQuantity(1L)
@@ -162,5 +193,11 @@ public class PaymentController {
         response.put("checkoutUrl", session.getUrl());
 
         return ResponseEntity.ok(response);
+    }
+
+    private String buildStrasse(User u) {
+        String street = u.getStreet() != null ? u.getStreet().trim() : "";
+        String house = u.getHouseNumber() != null ? u.getHouseNumber().trim() : "";
+        return (street + " " + house).trim();
     }
 }

@@ -48,6 +48,9 @@ public class User {
 
     private String companyName;
 
+    // Stripe
+    private String stripeCustomerId;
+
 
     @PrePersist
     protected void onCreate() {

@@ -5,6 +5,7 @@ import com.autovermietung.backend.model.dto.BuchungAntwortDTO;
 import com.autovermietung.backend.service.BuchungService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -35,6 +36,17 @@ public class BuchungController {
     public List<BuchungAntwortDTO> meineBuchungen() {
         return buchungService.alleFuerCurrentUser();
     }
+
+
+    // =========================
+// RESERVIERUNG ABBRECHEN (ohne Storno / Refund)
+// =========================
+    @DeleteMapping("/api/buchungen/{id}/abbrechen")
+    public void abbrechenOhneStorno(@PathVariable Long id) {
+        buchungService.abbrechenOhneStorno(id);
+    }
+
+
 
     // =========================
     // ADMIN: Buchungen nach User
