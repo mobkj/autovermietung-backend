@@ -21,9 +21,16 @@ public class UserService {
                         u.getFirstName(),
                         u.getLastName(),
                         u.getEmail(),
-                        u.getRole().name(),
+                        u.getRole() != null ? u.getRole().name() : null,
                         u.getBirthDate(),
-                        u.getDriverLicenseNumber()
+                        u.getDriverLicenseNumber(),
+                        u.getPhone(),
+                        u.getStreet(),
+                        u.getHouseNumber(),
+                        u.getPostalCode(),
+                        u.getCity(),
+                        u.getCountry(),
+                        u.getCompanyName()
                 ))
                 .toList();
     }
@@ -35,11 +42,19 @@ public class UserService {
                         u.getFirstName(),
                         u.getLastName(),
                         u.getEmail(),
-                        u.getRole().name(),
+                        u.getRole() != null ? u.getRole().name() : null,
                         u.getBirthDate(),
-                        u.getDriverLicenseNumber()
+                        u.getDriverLicenseNumber(),
+                        u.getPhone(),
+                        u.getStreet(),
+                        u.getHouseNumber(),
+                        u.getPostalCode(),
+                        u.getCity(),
+                        u.getCountry(),
+                        u.getCompanyName()
                 ));
     }
+
 
     public boolean deleteUser(Long id) {
         if (!userRepository.existsById(id)) return false;

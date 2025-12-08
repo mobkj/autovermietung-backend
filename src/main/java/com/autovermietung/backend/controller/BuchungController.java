@@ -1,11 +1,13 @@
 package com.autovermietung.backend.controller;
 
+import com.autovermietung.backend.model.dto.AdminTodoItemDTO;
 import com.autovermietung.backend.model.dto.BuchungAnlegenDTO;
 import com.autovermietung.backend.model.dto.BuchungAntwortDTO;
 import com.autovermietung.backend.service.BuchungService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -68,6 +70,14 @@ public class BuchungController {
     @GetMapping("/api/buchungen/fahrzeug/{fahrzeugId}")
     public List<BuchungAntwortDTO> buchungenFuerFahrzeugKalender(@PathVariable Long fahrzeugId) {
         return buchungService.aktiveBuchungenFuerFahrzeug(fahrzeugId);
+    }
+
+    @GetMapping("/api/admin/buchungen/todo")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public List<AdminTodoItemDTO> adminTodos(
+            @RequestParam(name = "range", defaultValue = "week") String range
+    ) {
+        return buchungService.adminTodos(range);
     }
 
 

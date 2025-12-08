@@ -22,7 +22,7 @@ public class BuchungAntwortDTO {
 
     private LocalDateTime startDatum;
     private LocalDateTime endDatum;
-
+    private boolean agbAccepted;
     private boolean bringService;
 
     // z.B. "RESERVIERT", "BEZAHLT", "STORNIERT"
@@ -35,4 +35,7 @@ public class BuchungAntwortDTO {
 
     // bis wann der Slot reserviert ist (für 5-Minuten-Hold)
     private LocalDateTime reserviertBis;
+
+    private BigDecimal refundAmount;
+    private LocalDateTime storniertAm;
 }

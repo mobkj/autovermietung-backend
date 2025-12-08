@@ -29,7 +29,7 @@ public class AdminInitializer {
             User customer = User.builder()
                     .firstName("Admin")
                     .lastName("Mazari")
-                    .email("admin@mazari.dee")
+                    .email("mazariautovermietung@gmail.com")
                     .password(encoder.encode("Admin123!")) // Passwort später anpassen!
                     .driverLicenseNumber("L8KSJQOD")
                     .birthDate("10.09.2003")

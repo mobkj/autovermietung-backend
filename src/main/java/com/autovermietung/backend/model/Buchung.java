@@ -60,6 +60,8 @@ public class Buchung {
     @Column(name = "stripe_payment_intent_id", length = 255)
     private String stripePaymentIntentId;
 
+    private String stripeRefundId;
+
     @Column(name = "refund_amount")
     private BigDecimal refundAmount;
 
@@ -69,6 +71,17 @@ public class Buchung {
 
     @Column(precision = 10, scale = 2)
     private BigDecimal gesamtPreis;
+
+    private String rechnungName;       // "Max Mustermann" oder Cardholder-Name
+    private String rechnungCompany;    // "XYZ GmbH" oder null
+    private String rechnungStrasse;    // aus User oder Stripe
+    private String rechnungPlz;
+    private String rechnungOrt;
+    private String rechnungLand;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean agbAccepted = false;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -30,4 +30,10 @@ public interface BuchungRepository extends JpaRepository<Buchung, Long> {
 
     List<Buchung> findAllByFahrzeug_IdAndStatusIn(Long fahrzeugId, List<BuchungsStatus> status);
 
+    List<Buchung> findByStatusAndStartDatumBetweenOrderByStartDatumAsc(
+            BuchungsStatus status,
+            LocalDateTime start,
+            LocalDateTime end
+    );
+
 }

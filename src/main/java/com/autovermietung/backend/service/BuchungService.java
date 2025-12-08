@@ -14,6 +14,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import com.autovermietung.backend.exception.ApiException;
 import com.stripe.model.Refund;
 import com.stripe.param.RefundCreateParams;
+import com.autovermietung.backend.model.dto.AdminTodoItemDTO;
+
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +34,7 @@ public class BuchungService {
     private final BuchungRepository buchungRepo;
     private final FahrzeugRepository fahrzeugRepo;
     private final UserRepository userRepo;
+    private final EmailService emailService;
 
     // =========================
     // BUCHUNG ANLEGEN
@@ -263,6 +266,29 @@ public class BuchungService {
                 .toList();
     }
 
+    public List<AdminTodoItemDTO> adminTodos(String range) {
+        LocalDate today = LocalDate.now();
+        LocalDateTime from = today.atStartOfDay();
+        LocalDateTime to;
+
+        switch (range == null ? "" : range.toLowerCase()) {
+            case "today", "heute" -> to = today.atTime(23, 59, 59);
+            case "month", "monat" -> to = today.plusMonths(1).atTime(23, 59, 59);
+            default -> to = today.plusWeeks(1).atTime(23, 59, 59); // week = default
+        }
+
+        List<Buchung> list = buchungRepo.findByStatusAndStartDatumBetweenOrderByStartDatumAsc(
+                BuchungsStatus.BEZAHLT,
+                from,
+                to
+        );
+
+        return list.stream()
+                .map(this::mapToAdminTodo)
+                .toList();
+    }
+
+
     public BuchungAntwortDTO stornieren(Long buchungId) {
         Buchung b = buchungRepo.findById(buchungId)
                 .orElseThrow(() -> new RuntimeException("Buchung nicht gefunden"));
@@ -297,11 +323,14 @@ public class BuchungService {
                 b.getKundePhone(),
                 b.getStartDatum(),
                 b.getEndDatum(),
+                b.isAgbAccepted(),
                 b.isBringService(),
                 b.getStatus().name(),
                 b.getGesamtPreis(),
                 b.getCreatedAt(),
-                b.getReserviertBis()
+                b.getReserviertBis(),
+                b.getRefundAmount(),     // ✅ neu
+                b.getStorniertAm()
         );
     }
 
@@ -322,16 +351,20 @@ public class BuchungService {
             throw new ApiException("Du kannst nur deine eigenen Buchungen stornieren.");
         }
 
+        // schon storniert → nichts machen
         if (b.getStatus() == BuchungsStatus.STORNIERT) {
             return toDTO(b);
         }
+
+        Buchung saved;
 
         // Unbezahlte Reservierung -> einfach freigeben
         if (b.getStatus() == BuchungsStatus.RESERVIERT) {
             b.setStatus(BuchungsStatus.STORNIERT);
             b.setReserviertBis(null);
             b.setStorniertAm(LocalDateTime.now());
-            Buchung saved = buchungRepo.save(b);
+            saved = buchungRepo.save(b);
+            sendStornoMailSafe(saved);
             return toDTO(saved);
         }
 
@@ -342,7 +375,9 @@ public class BuchungService {
 
             b.setStatus(BuchungsStatus.STORNIERT);
             b.setReserviertBis(null);
-            Buchung saved = buchungRepo.save(b);
+            b.setStorniertAm(LocalDateTime.now());
+            saved = buchungRepo.save(b);
+            sendStornoMailSafe(saved);
             return toDTO(saved);
         }
 
@@ -350,9 +385,19 @@ public class BuchungService {
         b.setStatus(BuchungsStatus.STORNIERT);
         b.setReserviertBis(null);
         b.setStorniertAm(LocalDateTime.now());
-        Buchung saved = buchungRepo.save(b);
+        saved = buchungRepo.save(b);
+        sendStornoMailSafe(saved);
         return toDTO(saved);
     }
+
+    private void sendStornoMailSafe(Buchung buchung) {
+        try {
+            emailService.sendStornoBestaetigung(buchung);
+        } catch (Exception mailEx) {
+            System.out.println("[Mail] Fehler beim Senden der Storno-Bestätigung: " + mailEx.getMessage());
+        }
+    }
+
 
 
     private String generateBuchungsNummer(Buchung buchung) {
@@ -369,31 +414,51 @@ public class BuchungService {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal full = b.getGesamtPreis();
+        BigDecimal full = b.getGesamtPreis().setScale(2, RoundingMode.HALF_UP);
 
         LocalDate startDate = b.getStartDatum().toLocalDate();
         LocalDate heute = LocalDate.now();
 
         long daysUntilStart = ChronoUnit.DAYS.between(heute, startDate);
 
-        // 14 Tage oder mehr vorher -> voller Betrag minus 2 €
-        if (daysUntilStart >= 14) {
-            BigDecimal fee = new BigDecimal("2.00");
-            BigDecimal refund = full.subtract(fee);
-            if (refund.compareTo(BigDecimal.ZERO) < 0) {
-                return BigDecimal.ZERO;
-            }
-            return refund.setScale(2, RoundingMode.HALF_UP);
+        // 1) Basis-Erstattungsbetrag je nach Zeitpunkt der Stornierung
+        BigDecimal baseRefund;
+        if (daysUntilStart > 10) {
+            // Mehr als 10 Tage vorher -> theoretisch volle Erstattung
+            baseRefund = full;
+        } else if (daysUntilStart >= 0) {
+            // 0–10 Tage vorher -> nur 50 % Erstattung
+            baseRefund = full.multiply(new BigDecimal("0.5"));
+        } else {
+            // Mietbeginn schon vorbei -> keine Erstattung
+            return BigDecimal.ZERO;
         }
 
-        // 0–13 Tage vorher -> 50 %
-        if (daysUntilStart >= 0) {
-            return full.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+        // 2) Gebühren des Zahlungsanbieters ungefähr schätzen
+        //    (z.B. ca. 2,5 % + 0,35 € auf den ursprünglichen Betrag)
+        BigDecimal percentFee   = new BigDecimal("0.025"); // 2,5 %
+        BigDecimal fixedFee     = new BigDecimal("0.35");  // 0,35 €
+        BigDecimal minFee       = new BigDecimal("2.00");  // Mindestgebühr
+        BigDecimal maxFee       = new BigDecimal("25.00"); // optionale Obergrenze
+
+        BigDecimal feeEstimate = full.multiply(percentFee).add(fixedFee);
+
+        // Servicegebühr begrenzen
+        BigDecimal serviceFee = feeEstimate.max(minFee).min(maxFee);
+
+        // 3) Tatsächlicher Refund = Basis-Erstattung minus Servicegebühr
+        BigDecimal refund = baseRefund.subtract(serviceFee);
+
+        if (refund.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO;
         }
 
-        // Mietbeginn schon vorbei -> kein Refund
-        return BigDecimal.ZERO;
+        return refund.setScale(2, RoundingMode.HALF_UP);
     }
+
+
+
+
 
     private void fuehreStripeRefundDurch(Buchung b, BigDecimal refundAmount) {
         if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -419,15 +484,16 @@ public class BuchungService {
             Refund refund = Refund.create(params);
 
             b.setRefundAmount(refundAmount);
+            b.setStripeRefundId(refund.getId());   // 🔥 hier speichern wir die Refund-ID
             b.setStorniertAm(LocalDateTime.now());
-            // Falls du das Refund-Objekt noch tracken willst:
-            // b.setStripeRefundId(refund.getId());
+
             System.out.println("[Storno] Refund erstellt: " + refund.getId()
                     + " über " + refundAmount + " EUR");
         } catch (Exception e) {
             throw new ApiException("Die Rückerstattung über Stripe ist fehlgeschlagen: " + e.getMessage());
         }
     }
+
 
     public void abbrechenOhneStorno(Long buchungId) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -459,6 +525,84 @@ public class BuchungService {
 
         // 👉 Komplett löschen – als hätte es die Buchung nie gegeben
         buchungRepo.delete(b);
+    }
+
+
+    private AdminTodoItemDTO mapToAdminTodo(Buchung b) {
+        LocalDate today = LocalDate.now();
+        LocalDateTime start = b.getStartDatum();
+        long tageBis = start != null
+                ? ChronoUnit.DAYS.between(today, start.toLocalDate())
+                : 0;
+
+        // Fahrzeugname
+        String fahrzeugName = "";
+        if (b.getFahrzeug() != null) {
+            var f = b.getFahrzeug();
+            String base = (safe(f.getMarke()) + " " + safe(f.getModell())).trim();
+            if (f.getSerie() != null && !f.getSerie().isBlank()) {
+                fahrzeugName = (base + " " + f.getSerie()).trim();
+            } else {
+                fahrzeugName = base;
+            }
+        }
+
+        // Kunde
+        String kundeName;
+        String kundeEmail = safe(b.getKundeEmail());
+        String kundePhone = safe(b.getKundePhone());
+
+        if (b.getUser() != null) {
+            String fn = safe(b.getUser().getFirstName());
+            String ln = safe(b.getUser().getLastName());
+            kundeName = (fn + " " + ln).trim();
+
+            if (kundeEmail.isBlank()) {
+                kundeEmail = safe(b.getUser().getEmail());
+            }
+            if (kundePhone.isBlank()) {
+                kundePhone = safe(b.getUser().getPhone());
+            }
+        } else {
+            kundeName = safe(b.getKundeName());
+        }
+
+        // Ort
+        String ort;
+        if (b.isBringService()) {
+            ort = buildCustomerAddressLine(b);
+        } else {
+            ort = "Mazari Autovermietung, MusterMann Straße 2, 65205 Wiesbaden-Erbenheim";
+        }
+
+        return new AdminTodoItemDTO(
+                b.getId(),
+                safe(b.getBuchungsNummer()),
+                fahrzeugName,
+                kundeName,
+                kundeEmail,
+                kundePhone,
+                b.isBringService(),
+                ort,
+                start,
+                tageBis
+        );
+    }
+
+
+    private String buildCustomerAddressLine(Buchung b) {
+        if (b.getUser() == null) {
+            return "";
+        }
+        var u = b.getUser();
+        String street = (safe(u.getStreet()) + " " + safe(u.getHouseNumber())).trim();
+        String city   = (safe(u.getPostalCode()) + " " + safe(u.getCity())).trim();
+        String country = safe(u.getCountry());
+        return (street + ", " + city + (country.isBlank() ? "" : ", " + country)).trim();
+    }
+
+    private String safe(Object v) {
+        return v == null ? "" : v.toString().trim();
     }
 
 

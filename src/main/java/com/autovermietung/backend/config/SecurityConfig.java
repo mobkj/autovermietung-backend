@@ -46,6 +46,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
 
+
+                        // ✅ CORS-Preflight immer erlauben
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                         // Öffentliche Endpunkte
                         .requestMatchers("/auth/login", "/auth/register").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
@@ -63,8 +67,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/buchungen/mw").authenticated()
 
                         // Admin Bereich
-                        .requestMatchers(HttpMethod.POST, "/api/admin/**")
-                        .hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+
+                        .requestMatchers("/api/test-email/**").permitAll()
 
                         // alles andere → Login nötig (inkl. /auth/verify-password)
                         .anyRequest().authenticated()

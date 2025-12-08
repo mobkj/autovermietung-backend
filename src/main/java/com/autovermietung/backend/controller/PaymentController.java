@@ -10,12 +10,15 @@ import com.autovermietung.backend.model.dto.CreateCheckoutSessionRequest;
 import com.autovermietung.backend.repository.BuchungRepository;
 import com.autovermietung.backend.repository.UserRepository;
 import com.autovermietung.backend.service.PreisBerechnungService;
+import com.autovermietung.backend.service.RechnungPdfService;
 import com.stripe.Stripe;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionCreateParams;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -35,6 +38,7 @@ public class PaymentController {
     private final BuchungRepository buchungRepo;
     private final PreisBerechnungService preisBerechnungService;
     private final UserRepository userRepository;
+    private final RechnungPdfService rechnungPdfService;
 
     @Value("${stripe.secret-key}")
     private String stripeSecretKey;
@@ -52,6 +56,11 @@ public class PaymentController {
     public ResponseEntity<Map<String, Object>> createCheckoutSession(
             @RequestBody CreateCheckoutSessionRequest request
     ) throws Exception {
+
+
+        if (!Boolean.TRUE.equals(request.getAgbAccepted())) {
+            throw new ApiException("AGB müssen akzeptiert werden, bevor die Zahlung gestartet wird.");
+        }
 
         if (request.getBuchungId() == null) {
             throw new ApiException("Buchungs-ID fehlt.");
@@ -193,6 +202,53 @@ public class PaymentController {
         response.put("checkoutUrl", session.getUrl());
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{buchungId}/pdf")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<byte[]> downloadRechnung(@PathVariable Long buchungId) {
+        // 1) Buchung laden
+        Buchung buchung = buchungRepo.findById(buchungId)
+                .orElseThrow(() -> new RuntimeException("Buchung nicht gefunden."));
+
+        // 2) Nur BEZAHLTE Buchungen bekommen eine Rechnung
+        if (buchung.getStatus() != BuchungsStatus.BEZAHLT) {
+            throw new RuntimeException("Für diese Buchung liegt keine bezahlte Rechnung vor.");
+        }
+
+        // 3) PDF generieren
+        byte[] pdf = rechnungPdfService.createRechnungPdf(buchung);
+
+        String fileName = "Rechnung_" +
+                (buchung.getBuchungsNummer() != null ? buchung.getBuchungsNummer() : buchung.getId())
+                + ".pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    @GetMapping("/{buchungId}/storno-pdf")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<byte[]> downloadStorno(@PathVariable Long buchungId) {
+        Buchung buchung = buchungRepo.findById(buchungId)
+                .orElseThrow(() -> new RuntimeException("Buchung nicht gefunden."));
+
+        if (buchung.getStatus() != BuchungsStatus.STORNIERT) {
+            throw new RuntimeException("Diese Buchung ist nicht storniert.");
+        }
+
+        byte[] pdf = rechnungPdfService.createStornoRechnungPdf(buchung);
+
+        String fileName = "Stornorechnung_" +
+                (buchung.getBuchungsNummer() != null ? buchung.getBuchungsNummer() : buchung.getId())
+                + ".pdf";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     private String buildStrasse(User u) {
