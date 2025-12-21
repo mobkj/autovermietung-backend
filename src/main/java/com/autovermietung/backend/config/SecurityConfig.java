@@ -86,22 +86,26 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // localhost + Heimnetz (Handy/iPad)
+        // Frontend-Origins, die auf dein Backend zugreifen dürfen
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
-                "http://localhost:8080",
-                "http://192.168.178.128:5173",
-                "https://ngan-unsettled-uninceptively.ngrok-free.dev"
+                "https://autovermietung-frontend.vercel.app",
+                "https://*.vercel.app" // optional: falls Preview-Deployments erlaubt sein sollen
         ));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
 
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin"));
+        config.setExposedHeaders(List.of("Authorization")); // optional, falls du Tokens in Response-Headers nutzt
+
+        // Bei JWT im Authorization-Header brauchst du das NICHT zwingend.
+        // Lass es nur true, wenn du wirklich Cookies/Session über CORS nutzt.
+        config.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+
 
 
     @Bean
