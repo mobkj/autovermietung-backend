@@ -34,7 +34,7 @@ spring:
             enable: true
 
 server:
-  port: 8080
+  port: ${PORT:8080}444
 
 # Für die Anwendung (JWT & E-Mails)
 app:
