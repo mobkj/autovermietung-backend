@@ -2,11 +2,14 @@
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# erst pom.xml kopieren (bessere Docker-Caching)
+# Maven-Projektdateien kopieren
 COPY pom.xml .
+COPY mvnw .
+COPY .mvn ./.mvn
 COPY src ./src
 
-RUN mvn -DskipTests clean package
+# Build (Wrapper nutzen ist am stabilsten)
+RUN ./mvnw -DskipTests clean package
 
 # -------- RUN STAGE --------
 FROM eclipse-temurin:17-jre
