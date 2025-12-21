@@ -1,8 +1,12 @@
 # -------- BUILD STAGE --------
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
-COPY src .
-RUN mvn clean package -DskipTests
+
+# erst pom.xml kopieren (bessere Docker-Caching)
+COPY pom.xml .
+COPY src ./src
+
+RUN mvn -DskipTests clean package
 
 # -------- RUN STAGE --------
 FROM eclipse-temurin:17-jre
