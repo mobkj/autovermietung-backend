@@ -20,12 +20,17 @@ public class FahrzeugBild {
     @JoinColumn(name = "fahrzeug_id")
     private Fahrzeug fahrzeug;
 
-    /** z. B. "bild1_5.jpg" – Ordner kommt über Fahrzeug-ID */
-    private String dateiname;
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(name = "data", nullable = false)
+    private byte[] data;
 
-    /** 1 = erstes Bild (Vorschau), 2, 3, … */
+    @Column(nullable = false)
+    private String contentType; // "image/jpeg", "image/png", ...
+
+    private String originalFilename; // optional
+
     private Integer sortierung;
 
-    /** true = Vorschau-Bild (Cover) */
     private boolean vorschau;
 }

@@ -47,7 +47,8 @@ public class Fahrzeug {
     @OneToMany(
             mappedBy = "fahrzeug",
             cascade = CascadeType.ALL,
-            orphanRemoval = true
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
     )
     @OrderBy("sortierung ASC")
     private List<FahrzeugBild> bilder = new ArrayList<>();

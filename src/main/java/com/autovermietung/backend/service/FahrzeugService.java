@@ -56,25 +56,25 @@ public class FahrzeugService {
         return toDTO(saved);
     }
 
-    private void saveImageWithOptionalCompression(MultipartFile file, Path target) throws IOException {
+    private byte[] toBytesWithOptionalCompression(MultipartFile file) throws IOException {
         long size = file.getSize();
 
-        // Bis 10 MB → direkt speichern
         if (size <= COMPRESS_THRESHOLD_BYTES) {
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-            return;
+            return file.getBytes();
         }
 
-        // Ab 10 MB → skalieren / komprimieren
         try (var in = file.getInputStream();
-             var out = Files.newOutputStream(target,
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+             var out = new java.io.ByteArrayOutputStream()) {
+
             Thumbnails.of(in)
                     .size(MAX_WIDTH, MAX_HEIGHT)
                     .outputQuality(0.8f)
                     .toOutputStream(out);
+
+            return out.toByteArray();
         }
     }
+
 
 
     // =========================================================================
@@ -154,35 +154,24 @@ public class FahrzeugService {
         Fahrzeug f = repo.findById(fahrzeugId)
                 .orElseThrow(() -> new RuntimeException("Fahrzeug nicht gefunden"));
 
-        // Ordner: uploads/fahrzeuge/{id}
-        Path fahrzeugOrdner = Paths.get("uploads/fahrzeuge/" + fahrzeugId);
-        Files.createDirectories(fahrzeugOrdner);
-
         int startIndex = f.getBilder().size() + 1;
 
         for (int i = 0; i < files.size(); i++) {
             MultipartFile file = files.get(i);
 
-            if (file.isEmpty()) {
-                throw new IllegalArgumentException("Eine der Dateien ist leer.");
-            }
-            if (file.getSize() > MAX_UPLOAD_BYTES) {
+            if (file.isEmpty()) throw new IllegalArgumentException("Eine der Dateien ist leer.");
+            if (file.getSize() > MAX_UPLOAD_BYTES)
                 throw new IllegalArgumentException("Eine Datei ist zu groß (max. 25 MB pro Bild).");
-            }
 
-
-            String extension = getExtension(file.getOriginalFilename());
             int sortierung = startIndex + i;
-
-            String filename = "bild" + sortierung + "_" + fahrzeugId + extension;
-            Path target = fahrzeugOrdner.resolve(filename);
-
-            saveImageWithOptionalCompression(file, target);
 
             FahrzeugBild bild = new FahrzeugBild();
             bild.setFahrzeug(f);
-            bild.setDateiname(filename);
             bild.setSortierung(sortierung);
+
+            bild.setData(toBytesWithOptionalCompression(file));
+            bild.setContentType(file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+            bild.setOriginalFilename(file.getOriginalFilename());
 
             boolean istErstesBild = f.getBilder().isEmpty() && sortierung == 1;
             bild.setVorschau(istErstesBild);
@@ -193,6 +182,7 @@ public class FahrzeugService {
         Fahrzeug saved = repo.save(f);
         return toDTO(saved);
     }
+
 
 
     // =========================================================================
@@ -206,13 +196,9 @@ public class FahrzeugService {
     @Transactional
     public FahrzeugAntwortDTO bildErsetzen(Long fahrzeugId, Long bildId, MultipartFile file) throws IOException {
 
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("Keine Datei übergeben.");
-        }
-        if (file.getSize() > MAX_UPLOAD_BYTES) {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("Keine Datei übergeben.");
+        if (file.getSize() > MAX_UPLOAD_BYTES)
             throw new IllegalArgumentException("Datei ist zu groß (max. 25 MB pro Bild).");
-        }
-
 
         Fahrzeug f = repo.findById(fahrzeugId)
                 .orElseThrow(() -> new RuntimeException("Fahrzeug nicht gefunden"));
@@ -224,52 +210,26 @@ public class FahrzeugService {
             throw new RuntimeException("Bild gehört nicht zu diesem Fahrzeug");
         }
 
-        Path fahrzeugOrdner = Paths.get("uploads/fahrzeuge/" + fahrzeugId);
-        Files.createDirectories(fahrzeugOrdner);
+        bild.setData(toBytesWithOptionalCompression(file));
+        bild.setContentType(file.getContentType() != null ? file.getContentType() : "application/octet-stream");
+        bild.setOriginalFilename(file.getOriginalFilename());
 
-        String extension = getExtension(file.getOriginalFilename());
-        int sortierung = bild.getSortierung();
-
-        String newFilename = "bild" + sortierung + "_" + fahrzeugId + extension;
-        Path target = fahrzeugOrdner.resolve(newFilename);
-
-        if (bild.getDateiname() != null && !bild.getDateiname().equals(newFilename)) {
-            Path oldPath = fahrzeugOrdner.resolve(bild.getDateiname());
-            try {
-                Files.deleteIfExists(oldPath);
-            } catch (IOException ignored) {}
-        }
-
-        saveImageWithOptionalCompression(file, target);
-
-        bild.setDateiname(newFilename);
         bildRepo.save(bild);
 
         return toDTO(f);
     }
 
 
-    // =========================================================================
-    // HELFER
-    // =========================================================================
 
-    private String getExtension(String originalFilename) {
-        if (originalFilename == null) {
-            return "";
-        }
-        int idx = originalFilename.lastIndexOf('.');
-        return (idx >= 0) ? originalFilename.substring(idx) : "";
-    }
+
 
     private FahrzeugAntwortDTO toDTO(Fahrzeug f) {
 
         // HIER: Basis-URL, unter der die Bilder erreichbar sind
-        String basePath = "/uploads/fahrzeuge/" + f.getId() + "/";
-
         List<FahrzeugBildAntwortDTO> bilder = f.getBilder().stream()
                 .map(b -> new FahrzeugBildAntwortDTO(
                         b.getId(),
-                        basePath + b.getDateiname(), // z. B. "/uploads/fahrzeuge/1/bild1_1.png"
+                        "/api/fahrzeuge/bilder/" + b.getId(),
                         b.isVorschau(),
                         b.getSortierung()
                 ))

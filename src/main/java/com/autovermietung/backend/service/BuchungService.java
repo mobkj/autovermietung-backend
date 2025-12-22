@@ -572,7 +572,7 @@ public class BuchungService {
         if (b.isBringService()) {
             ort = buildCustomerAddressLine(b);
         } else {
-            ort = "Mazari Autovermietung, MusterMann Straße 2, 65205 Wiesbaden-Erbenheim";
+            ort = "Mazari Autovermietung, Am Königsfloß 6, 55252 Mainz-Kastel";
         }
 
         return new AdminTodoItemDTO(

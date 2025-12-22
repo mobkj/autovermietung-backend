@@ -21,17 +21,11 @@ spring:
       enabled: true
       path: /h2-console
 
-  mail:
-    host: smtp.mailgun.org          # oder smtp.eu.mailgun.org (je nach Mailgun-Region)
-    port: 587
-    username: mazari@sandboxb512a2e8274842b7b0381a94003c3302.mailgun.org
-    password: Mazari                # lokal ok, später über ENV-Var lösen
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
+mailgun:
+  api-key: ${MAILGUN_API_KEY}
+  domain: ${MAILGUN_DOMAIN:mazari-autovermietung.com}
+  base-url: ${MAILGUN_BASE_URL:https://api.eu.mailgun.net}
+
 
 server:
   port: ${PORT:8080}
@@ -39,17 +33,17 @@ server:
 # Für die Anwendung (JWT & E-Mails)
 app:
   jwt:
-    secret: Vqa6JP4YddRBAu9zuQAlRCmiq7wx21zjOTbeqaCDSAYh7rRpocbJ5aNLyNy/kvzlcCJ9xitP2IfjpH6mpLKXLA== # 32+ Zeichen Base64
+    secret: ${APP_SECRET} # 32+ Zeichen Base64
     expiration-ms: 86400000 # 24 Stunden
 
   email:
-    from: "Autovermietung <noreply@sandboxb512a2e8274842b7b0381a94003c3302.mailgun.org>"
+    from: "Mazari Autovermietung <no-reply@mazari-autovermietung.com>"
 
 # Zahlung mit Stripe
 stripe:
-  secret-key: sk_test_51SYW7k7cWPpddEzaUiMoHrXy9Zxqx8dMtsmDmNlP8dX4q9AWfQlTcjkGys8xQazxNFMqjWLD7BpAkVtiQEBN7XFb0067TJZtfx
-  public-key: pk_test_51SYW7k7cWPpddEzaLzJ7bYXOpu4f9D1734k7WYEFFbQ51VrkYALdm8sgJRnP0QgHyrXEDxy8tVRDPYMjq5a8gaOu00DpviD6vk
-  webhookSecret: whsec_3XmiblPX86CUdjKQnaxjCZYxEquemgOS
+  secret-key: ${SK_TEST}
+  public-key: ${PK_TEST}
+  webhookSecret: ${WEBHOOK_SECRET}
 
 # Optional: falls du später Mailgun-HTTP-API nutzt
 #mailgun:
