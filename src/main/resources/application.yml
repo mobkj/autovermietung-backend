@@ -35,6 +35,8 @@ app:
   jwt:
     secret: ${APP_SECRET} # 32+ Zeichen Base64
     expiration-ms: 86400000 # 24 Stunden
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
 
   email:
     from: "Mazari Autovermietung <no-reply@mazari-autovermietung.com>"
