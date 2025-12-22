@@ -50,7 +50,7 @@ public class SecurityConfig {
                         // ✅ CORS-Preflight immer erlauben
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-
+                        .requestMatchers(HttpMethod.POST, "/api/contact").permitAll()
 
                         // Öffentliche Endpunkte
                         .requestMatchers("/auth/login", "/auth/register").permitAll()
