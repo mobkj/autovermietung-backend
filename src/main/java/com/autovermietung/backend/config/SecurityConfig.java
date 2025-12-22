@@ -60,7 +60,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/stripe/webhook").permitAll()
 
                         // PUBLIC Fahrzeuge (ohne Login)
-                        .requestMatchers(HttpMethod.GET, "/api/fahrzeuge/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/fahrzeuge", "/api/fahrzeuge/**").permitAll()
+
 
                         // Buchungen
                         // Jeder eingeloggte User darf Buchung anlegen
@@ -107,6 +108,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+
 
 
 
