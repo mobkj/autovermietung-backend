@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+import jakarta.mail.internet.MimeMessage;
+import org.springframework.mail.javamail.MimeMessageHelper;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -49,6 +51,66 @@ public class EmailService {
                 """.formatted(buildFooter());
 
         sendViaMailgun(to, subject, body);
+    }
+
+
+    public void sendContactMessage(String name, String email, String subject, String message) {
+
+        String finalSubject = (subject == null || subject.isBlank())
+                ? "Kontaktanfrage (Website)"
+                : "Kontakt: " + subject;
+
+        String body = """
+        Neue Kontaktanfrage über die Website
+
+        Name: %s
+        Email: %s
+        Betreff: %s
+
+        Nachricht:
+        %s
+
+        %s
+        """.formatted(
+                safe(name),
+                safe(email),
+                safe(subject),
+                safe(message),
+                buildFooter()
+        );
+
+        // Wichtig: "Reply-To" damit du auf die Mail direkt antworten kannst
+        sendViaMailgunWithReplyTo(
+                "info@mazariautovermietung.com",
+                finalSubject,
+                body,
+                email
+        );
+    }
+
+    private void sendViaMailgunWithReplyTo(String to, String subject, String text, String replyTo) {
+        String url = mailgunBaseUrl + "/v3/" + mailgunDomain + "/messages";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBasicAuth("api", mailgunApiKey);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("from", from);
+        form.add("to", to);
+        form.add("subject", subject);
+        form.add("text", text);
+
+        if (replyTo != null && !replyTo.isBlank()) {
+            form.add("h:Reply-To", replyTo); // Mailgun custom header
+        }
+
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(form, headers);
+        ResponseEntity<String> res = restTemplate.postForEntity(url, request, String.class);
+
+        if (!res.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Mailgun send failed: " + res.getStatusCode() + " -> " + res.getBody());
+        }
     }
 
     // ---------------------------------------------------
