@@ -15,7 +15,12 @@ import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/stripe")
@@ -31,6 +36,7 @@ public class StripeWebhookController {
     private String endpointSecret;
 
     @PostMapping("/webhook")
+    @Transactional
     public ResponseEntity<String> handleStripeWebhook(
             @RequestHeader("Stripe-Signature") String sigHeader,
             @RequestBody String payload
@@ -38,7 +44,6 @@ public class StripeWebhookController {
 
         Event event;
         try {
-            // 1) Webhook-Signatur von Stripe prüfen
             event = Webhook.constructEvent(payload, sigHeader, endpointSecret);
         } catch (SignatureVerificationException e) {
             System.out.println("[Stripe Webhook] Signature verification failed: " + e.getMessage());
@@ -48,11 +53,10 @@ public class StripeWebhookController {
         String type = event.getType();
         System.out.println("[Stripe Webhook] Event empfangen: " + type);
 
-        // Nur auf erfolgreiche Checkout-Sessions reagieren
         if ("checkout.session.completed".equals(type)
                 || "checkout.session.async_payment_succeeded".equals(type)) {
+
             try {
-                // 2) Payload als JSON parsen und Session-Objekt holen
                 JsonNode root = objectMapper.readTree(payload);
                 JsonNode sessionNode = root.path("data").path("object");
 
@@ -61,8 +65,8 @@ public class StripeWebhookController {
                     return ResponseEntity.ok("");
                 }
 
-                String sessionId      = sessionNode.path("id").asText(null);
-                String paymentStatus  = sessionNode.path("payment_status").asText(null);
+                String sessionId       = sessionNode.path("id").asText(null);
+                String paymentStatus   = sessionNode.path("payment_status").asText(null);
                 String paymentIntentId = sessionNode.path("payment_intent").asText(null);
 
                 System.out.println("[Stripe Webhook] Raw Session ID: " + sessionId
@@ -74,29 +78,48 @@ public class StripeWebhookController {
                     return ResponseEntity.ok("");
                 }
 
+                // ✅ HIER EINFÜGEN (payment_intent MUSS da sein – sonst Refund etc. kaputt)
+                if (paymentIntentId == null || paymentIntentId.isBlank()) {
+                    System.out.println("[Stripe Webhook] payment_intent fehlt trotz paid -> Abbruch");
+                    return ResponseEntity.ok("");
+                }
+
                 // 3) Metadata auslesen (BuchungId, Km-Paket, Bringservice)
                 JsonNode metadata = sessionNode.path("metadata");
-                String buchungIdStr     = metadata.path("buchungId").asText(null);
-                String kmPaketStr       = metadata.path("freieKmPaket").asText(null);
-                String bringServiceStr  = metadata.path("bringService").asText("false");
-                boolean bringService    = Boolean.parseBoolean(bringServiceStr);
-
-                System.out.println("[Stripe Webhook] Metadata: buchungId="
-                        + buchungIdStr + ", freieKmPaket=" + kmPaketStr
-                        + ", bringService=" + bringService);
+                String buchungIdStr    = metadata.path("buchungId").asText(null);
+                String kmPaketStr      = metadata.path("freieKmPaket").asText(null);
+                String bringServiceStr = metadata.path("bringService").asText("false");
+                boolean bringService   = Boolean.parseBoolean(bringServiceStr);
 
                 if (buchungIdStr == null || kmPaketStr == null) {
                     System.out.println("[Stripe Webhook] Metadata unvollständig, breche ab.");
                     return ResponseEntity.ok("");
                 }
 
-                Long buchungId      = Long.valueOf(buchungIdStr);
-                int freieKmPaket    = Integer.parseInt(kmPaketStr);
+                Long buchungId   = Long.valueOf(buchungIdStr);
+                int freieKmPaket = Integer.parseInt(kmPaketStr);
 
-                // 4) Buchung aus der DB holen
-                Buchung buchung = buchungRepo.findById(buchungId).orElse(null);
+                // 4) Buchung aus der DB holen (LOCK)
+                Buchung buchung = buchungRepo.findByIdForUpdate(buchungId).orElse(null);
+
                 if (buchung == null) {
                     System.out.println("[Stripe Webhook] Buchung " + buchungId + " nicht gefunden.");
+                    return ResponseEntity.ok("");
+                }
+
+                // ✅ HIER (SessionId claimen / prüfen)
+                if (buchung.getStripeSessionId() == null) {
+                    buchung.setStripeSessionId(sessionId);
+                    buchungRepo.save(buchung);
+                } else if (sessionId != null && !buchung.getStripeSessionId().equals(sessionId)) {
+                    System.out.println("[Stripe Webhook] Buchung " + buchungId + " hat andere sessionId -> ignore");
+                    return ResponseEntity.ok("");
+                }
+
+                // ✅ HIER (Idempotenz: wenn PaymentIntent schon gesetzt -> ignore)
+                if (buchung.getStripePaymentIntentId() != null) {
+                    System.out.println("[Stripe Webhook] Buchung " + buchungId
+                            + " hat bereits paymentIntent -> ignore.");
                     return ResponseEntity.ok("");
                 }
 
@@ -115,6 +138,13 @@ public class StripeWebhookController {
                     return ResponseEntity.ok("");
                 }
 
+                // ✅ HIER EINFÜGEN (Reservierung darf NICHT abgelaufen sein)
+                LocalDateTime now = LocalDateTime.now();
+                if (buchung.getReserviertBis() != null && buchung.getReserviertBis().isBefore(now)) {
+                    System.out.println("[Stripe Webhook] Reservierung abgelaufen -> ignore");
+                    return ResponseEntity.ok("");
+                }
+
                 // 6) Optional: Email aus Metadata vs. Benutzer-Email prüfen (nur Logging)
                 String metaEmail = metadata.path("kundeEmail").asText(null);
                 if (metaEmail != null && buchung.getUser() != null) {
@@ -130,11 +160,10 @@ public class StripeWebhookController {
                     JsonNode customerDetails    = sessionNode.path("customer_details");
                     JsonNode billingAddressNode = customerDetails.path("address");
 
-                    String stripeName   = customerDetails.path("name").asText(null);
-                    String stripeEmail  = customerDetails.path("email").asText(null);
+                    String stripeName  = customerDetails.path("name").asText(null);
+                    String stripeEmail = customerDetails.path("email").asText(null);
 
                     String stripeLine1      = billingAddressNode.path("line1").asText(null);
-                    String stripeLine2      = billingAddressNode.path("line2").asText(null);
                     String stripePostalCode = billingAddressNode.path("postal_code").asText(null);
                     String stripeCity       = billingAddressNode.path("city").asText(null);
                     String stripeCountry    = billingAddressNode.path("country").asText(null);
@@ -147,42 +176,7 @@ public class StripeWebhookController {
 
                     User user = buchung.getUser();
 
-                    // Optionales Logging: Vergleich Stripe-Adresse vs. User-Adresse
-                    if (hasStripeAddress && user != null) {
-                        String baseLine1   = buildStrasse(user);
-                        String basePostal  = nullSafe(user.getPostalCode());
-                        String baseCity    = nullSafe(user.getCity());
-                        String baseCountry = nullSafe(user.getCountry(), "DE");
-
-                        boolean differs =
-                                !safeEquals(stripeLine1, baseLine1) ||
-                                        !safeEquals(stripePostalCode, basePostal) ||
-                                        !safeEquals(stripeCity, baseCity) ||
-                                        !safeEquals(stripeCountry, baseCountry);
-
-                        if (differs) {
-                            System.out.println("[Stripe Webhook] ⚠ Abweichende Rechnungsadresse erkannt.");
-                            System.out.println("  Adresse im System:");
-                            System.out.println("    " + baseLine1);
-                            System.out.println("    " + basePostal + " " + baseCity + " " + baseCountry);
-
-                            System.out.println("  Adresse aus Stripe:");
-                            System.out.println("    " + stripeLine1 + " " + stripeLine2);
-                            System.out.println("    " + stripePostalCode + " " + stripeCity + " " + stripeCountry);
-                            System.out.println("  Name (Stripe): " + stripeName);
-                            System.out.println("  Email (Stripe): " + stripeEmail);
-                        } else {
-                            System.out.println("[Stripe Webhook] Rechnungsadresse entspricht der im System gespeicherten Adresse.");
-                        }
-                    } else {
-                        System.out.println("[Stripe Webhook] Keine separate Rechnungsadresse von Stripe übermittelt oder kein User an Buchung.");
-                    }
-
-                    // ===============================
-                    // Rechnungsdaten bestimmen (immer)
-                    // ===============================
-
-                    // 7.1) Name für die Rechnung
+                    // 7.1) Name
                     String userFullName = "";
                     if (user != null) {
                         String fn = user.getFirstName() != null ? user.getFirstName().trim() : "";
@@ -191,25 +185,19 @@ public class StripeWebhookController {
                     }
 
                     String rechnungName;
-                    if (stripeName != null && !stripeName.isBlank()) {
-                        rechnungName = stripeName;
-                    } else if (!userFullName.isBlank()) {
-                        rechnungName = userFullName;
-                    } else if (buchung.getKundeName() != null && !buchung.getKundeName().isBlank()) {
-                        rechnungName = buchung.getKundeName();
-                    } else if (stripeEmail != null && !stripeEmail.isBlank()) {
-                        rechnungName = stripeEmail;
-                    } else {
-                        rechnungName = "Unbekannter Kunde";
-                    }
+                    if (stripeName != null && !stripeName.isBlank()) rechnungName = stripeName;
+                    else if (!userFullName.isBlank()) rechnungName = userFullName;
+                    else if (buchung.getKundeName() != null && !buchung.getKundeName().isBlank()) rechnungName = buchung.getKundeName();
+                    else if (stripeEmail != null && !stripeEmail.isBlank()) rechnungName = stripeEmail;
+                    else rechnungName = "Unbekannter Kunde";
 
-                    // 7.2) Firmenname aus deinem System (falls hinterlegt)
+                    // 7.2) Company
                     String rechnungCompany = null;
                     if (user != null && user.getCompanyName() != null && !user.getCompanyName().isBlank()) {
                         rechnungCompany = user.getCompanyName().trim();
                     }
 
-                    // 7.3) Rechnungsadresse – Stripe bevorzugt, sonst User-Adresse
+                    // 7.3) Adresse
                     String rechnungStrasse;
                     String rechnungPlz;
                     String rechnungOrt;
@@ -226,33 +214,65 @@ public class StripeWebhookController {
                         rechnungOrt     = nullSafe(user.getCity());
                         rechnungLand    = nullSafe(user.getCountry(), "DE");
                     } else {
-                        // Notfall-Fallback
                         rechnungStrasse = "";
                         rechnungPlz     = "";
                         rechnungOrt     = "";
                         rechnungLand    = "DE";
                     }
 
-                    // 7.4) In Buchung einfrieren – das nutzt du später fürs PDF
+                    // speichern
                     buchung.setRechnungName(rechnungName);
                     buchung.setRechnungCompany(rechnungCompany);
                     buchung.setRechnungStrasse(rechnungStrasse);
                     buchung.setRechnungPlz(rechnungPlz);
                     buchung.setRechnungOrt(rechnungOrt);
                     buchung.setRechnungLand(rechnungLand);
+                    buchung.setBringService(bringService);
+                    buchung.setFreieKmPaket(freieKmPaket);
+
+                    // ✅ HIER EINFÜGEN (PDF-SAFE Defaults)
+                    if (buchung.getRechnungLand() == null || buchung.getRechnungLand().isBlank()) {
+                        buchung.setRechnungLand("DE");
+                    }
+                    if (buchung.getRechnungName() == null || buchung.getRechnungName().isBlank()) {
+                        buchung.setRechnungName("Unbekannter Kunde");
+                    }
 
                 } catch (Exception addrEx) {
                     System.out.println("[Stripe Webhook] Konnte Rechnungsadresse nicht auslesen: " + addrEx.getMessage());
                 }
 
-                // 8) Preis final berechnen und Buchung auf BEZAHLT setzen
-                BuchungPreisAntwortDTO preis =
+                // amount_total lesen
+                long stripeAmountTotal = sessionNode.path("amount_total").asLong(-1);
+                if (stripeAmountTotal <= 0) {
+                    System.out.println("[Stripe Webhook] amount_total fehlt/ungueltig -> Abbruch");
+                    return ResponseEntity.ok("");
+                }
+
+                // Erwarteten Betrag neu berechnen
+                BuchungPreisAntwortDTO expectedPreis =
                         preisBerechnungService.berechnePreis(buchung, freieKmPaket, bringService);
 
-                buchung.setBringService(bringService);
+                if (expectedPreis == null || expectedPreis.getGesamtBrutto() == null) {
+                    System.out.println("[Stripe Webhook] Preisberechnung fehlgeschlagen (null) -> Abbruch");
+                    return ResponseEntity.ok("");
+                }
+
+                long expectedCents = expectedPreis.getGesamtBrutto()
+                        .multiply(new BigDecimal("100"))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValueExact();
+
+                if (stripeAmountTotal != expectedCents) {
+                    System.out.println("[Stripe Webhook] Betrag-Mismatch! Stripe=" + stripeAmountTotal
+                            + " expected=" + expectedCents + " (Buchung " + buchungId + ")");
+                    return ResponseEntity.ok("");
+                }
+
+                // ✅ FINAL: alles passt -> auf BEZAHLT setzen
                 buchung.setStatus(BuchungsStatus.BEZAHLT);
-                buchung.setGesamtPreis(preis.getGesamtBrutto());
-                buchung.setReserviertBis(null);               // Reservierungs-Timer löschen
+                buchung.setGesamtPreis(expectedPreis.getGesamtBrutto());
+                buchung.setReserviertBis(null);
                 buchung.setStripeSessionId(sessionId);
                 buchung.setStripePaymentIntentId(paymentIntentId);
                 buchung.setAgbAccepted(true);
@@ -265,20 +285,15 @@ public class StripeWebhookController {
                     System.out.println("[Stripe Webhook] Fehler beim Senden der Zahlungsbestätigung: " + mailEx.getMessage());
                 }
 
-                System.out.println("[Stripe Webhook] Buchung " + buchungId
-                        + " auf BEZAHLT gesetzt. GesamtBrutto=" + preis.getGesamtBrutto());
-                System.out.println("[Payment] Preis für Stripe: " + preis.getGesamtBrutto()
-                        + " (freieKmPaket=" + freieKmPaket + ", bringService=" + bringService + ")");
-
             } catch (Exception e) {
                 System.out.println("[Stripe Webhook] Fehler beim Verarbeiten: " + e.getMessage());
                 e.printStackTrace();
             }
         }
 
-        // Webhook immer mit 200 OK beantworten, damit Stripe zufrieden ist
         return ResponseEntity.ok("");
     }
+
 
     // ===== Helper-Methoden =====
 

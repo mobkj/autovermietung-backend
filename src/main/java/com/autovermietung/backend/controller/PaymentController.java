@@ -116,12 +116,25 @@ public class PaymentController {
         }
 
         // 4) Status checken – keine Zahlung, wenn schon bezahlt oder storniert
+        // 4) Status checken – keine Zahlung, wenn schon bezahlt oder storniert
         if (buchung.getStatus() == BuchungsStatus.BEZAHLT) {
             throw new ApiException("Diese Buchung wurde bereits bezahlt.");
         }
+
         if (buchung.getStatus() == BuchungsStatus.STORNIERT) {
             throw new ApiException("Für eine stornierte Buchung kann keine Zahlung gestartet werden.");
         }
+
+// ✅ HIER EINFÜGEN (Reservierung muss aktiv sein)
+        if (buchung.getStatus() != BuchungsStatus.RESERVIERT) {
+            throw new ApiException("Diese Buchung ist nicht reserviert und kann nicht bezahlt werden.");
+        }
+
+        if (buchung.getReserviertBis() != null
+                && buchung.getReserviertBis().isBefore(java.time.LocalDateTime.now())) {
+            throw new ApiException("Reservierung ist abgelaufen. Bitte neu buchen.");
+        }
+
 
         // 5) Preis berechnen (inkl. Brutto)
         int freieKmPaket = request.getFreieKmPaket();

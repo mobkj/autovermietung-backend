@@ -125,31 +125,15 @@ public class RechnungPdfService {
             doc.add(leistungMeta);
 
             // ============ PREISBERECHNUNG / POSITIONEN ============
-            // Wir rekonstruieren das gewählte Km-Paket,
-            // indem wir die drei Varianten durchrechnen und mit dem gespeicherten Gesamtpreis matchen.
-            BuchungPreisAntwortDTO preisDto = null;
-            int gebuchteKm = 150;
-            BigDecimal targetBrutto = buchung.getGesamtPreis();
+            int gebuchteKm = (buchung.getFreieKmPaket() != null) ? buchung.getFreieKmPaket() : 150;
 
-            int[] kmPakete = {150, 300, 500};
-            for (int km : kmPakete) {
-                BuchungPreisAntwortDTO candidate =
-                        preisBerechnungService.berechnePreis(buchung, km, buchung.isBringService());
-                if (targetBrutto != null
-                        && candidate.getGesamtBrutto() != null
-                        && candidate.getGesamtBrutto().setScale(2, RoundingMode.HALF_UP)
-                        .compareTo(targetBrutto.setScale(2, RoundingMode.HALF_UP)) == 0) {
-                    preisDto = candidate;
-                    gebuchteKm = km;
-                    break;
-                }
-                // Fallback, falls kein exaktes Match: letzter berechneter Wert
-                preisDto = candidate;
-            }
+            BuchungPreisAntwortDTO preisDto =
+                    preisBerechnungService.berechnePreis(buchung, gebuchteKm, buchung.isBringService());
 
             if (preisDto == null) {
-                // letzter Notfall: trotzdem irgendetwas rechnen
-                preisDto = preisBerechnungService.berechnePreis(buchung, gebuchteKm, buchung.isBringService());
+                // Notfall-Fallback
+                preisDto = preisBerechnungService.berechnePreis(buchung, 150, buchung.isBringService());
+                gebuchteKm = 150;
             }
 
             BigDecimal mietpreisNetto = nullSafe(preisDto.getMietpreisNetto());

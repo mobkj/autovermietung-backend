@@ -68,6 +68,7 @@ public class Buchung {
     @Column(name = "storniert_am")
     private LocalDateTime storniertAm;
 
+    private Integer freieKmPaket;
 
     @Column(precision = 10, scale = 2)
     private BigDecimal gesamtPreis;

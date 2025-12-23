@@ -28,6 +28,10 @@ app:
     expiration-ms: 86400000 # 24 Stunden
   frontend:
     base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+  bootstrap:
+    admin:
+      email: ${BOOTSTRAP_ADMIN_EMAIL}
+      password: ${BOOTSTRAP_ADMIN_PASSWORD}
 
   email:
     from: "Mazari Autovermietung <no-reply@mazari-autovermietung.com>"

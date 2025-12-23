@@ -19,6 +19,7 @@ import com.autovermietung.backend.model.dto.AdminTodoItemDTO;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 
 
@@ -40,6 +41,8 @@ public class BuchungService {
     // BUCHUNG ANLEGEN
     // =========================
     public BuchungAntwortDTO anlegen(BuchungAnlegenDTO dto) {
+
+
         if (dto.getStartDatum() == null || dto.getEndDatum() == null) {
             throw new IllegalArgumentException("Start- und Enddatum sind erforderlich.");
         }
@@ -55,11 +58,14 @@ public class BuchungService {
         User user = null;
         Role role = null;
 
-        if (dto.getUserId() != null) {
-            user = userRepo.findById(dto.getUserId())
-                    .orElseThrow(() -> new RuntimeException("User nicht gefunden"));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            String email = auth.getName();
+            user = userRepo.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User zum Token nicht gefunden."));
             role = user.getRole();
         }
+
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -299,7 +305,8 @@ public class BuchungService {
         }
 
         b.setStatus(BuchungsStatus.STORNIERT);
-        b.setReserviertBis(null); // blockiert nicht mehr
+        b.setReserviertBis(null);
+        b.setStorniertAm(LocalDateTime.now()); // blockiert nicht mehr
 
         Buchung saved = buchungRepo.save(b);
         return toDTO(saved);
@@ -313,6 +320,14 @@ public class BuchungService {
     // Mapping
     // =========================
     private BuchungAntwortDTO toDTO(Buchung b) {
+
+        OffsetDateTime reserviertBis = null;
+        if (b.getReserviertBis() != null) {
+            reserviertBis = b.getReserviertBis()
+                    .atZone(java.time.ZoneId.of("Europe/Berlin"))
+                    .toOffsetDateTime();
+        }
+
         return new BuchungAntwortDTO(
                 b.getId(),
                 b.getBuchungsNummer(),
@@ -328,7 +343,7 @@ public class BuchungService {
                 b.getStatus().name(),
                 b.getGesamtPreis(),
                 b.getCreatedAt(),
-                b.getReserviertBis(),
+                reserviertBis,
                 b.getRefundAmount(),     // ✅ neu
                 b.getStorniertAm()
         );
@@ -465,10 +480,15 @@ public class BuchungService {
             return; // nichts zu erstatten
         }
 
-        if (b.getStripePaymentIntentId() == null) {
-            System.out.println("[Storno] Keine Stripe PaymentIntent ID vorhanden, kann nicht refunden.");
-            return;
+        if (b.getStripeRefundId() != null) {
+            return; // Refund schon durchgeführt
         }
+
+
+        if (b.getStripePaymentIntentId() == null) {
+            throw new ApiException("Keine PaymentIntent-ID vorhanden – Storno nicht möglich (manuelle Prüfung nötig).");
+        }
+
 
         try {
             long amountInCents = refundAmount
@@ -519,8 +539,8 @@ public class BuchungService {
         }
 
         // Safety: falls da schon Payment-Infos drin sind → lieber stornieren
-        if (b.getStripePaymentIntentId() != null || b.getGesamtPreis() != null) {
-            throw new ApiException("Diese Buchung scheint bereits bezahlt zu sein. Bitte stornieren.");
+        if (b.getStripeSessionId() != null || b.getStripePaymentIntentId() != null || b.getGesamtPreis() != null) {
+            throw new ApiException("Diese Buchung ist bereits im Zahlungsprozess. Bitte stornieren.");
         }
 
         // 👉 Komplett löschen – als hätte es die Buchung nie gegeben

@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @AllArgsConstructor
@@ -34,7 +35,7 @@ public class BuchungAntwortDTO {
     private LocalDateTime createdAt;
 
     // bis wann der Slot reserviert ist (für 5-Minuten-Hold)
-    private LocalDateTime reserviertBis;
+    private OffsetDateTime reserviertBis;
 
     private BigDecimal refundAmount;
     private LocalDateTime storniertAm;
