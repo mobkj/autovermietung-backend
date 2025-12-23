@@ -82,6 +82,7 @@ public class FahrzeugService {
     // =========================================================================
 
     /** Für Admin: alle Fahrzeuge unabhängig vom Status */
+    @Transactional(readOnly = true)
     public List<FahrzeugAntwortDTO> alle() {
         return repo.findAll().stream()
                 .map(this::toDTO)
@@ -89,6 +90,7 @@ public class FahrzeugService {
     }
 
     /** Für Kunden/Frontend: nur AKTIVE Fahrzeuge */
+    @Transactional(readOnly = true)
     public List<FahrzeugAntwortDTO> alleAktiven() {
         return repo.findAllByStatus(FahrzeugStatus.AKTIV).stream()
                 .map(this::toDTO)
@@ -96,11 +98,13 @@ public class FahrzeugService {
     }
 
     /** Für Admin: Fahrzeug per ID */
+    @Transactional(readOnly = true)
     public Optional<FahrzeugAntwortDTO> eins(Long id) {
         return repo.findById(id).map(this::toDTO);
     }
 
     /** Für Kunden/Frontend: nur wenn AKTIV */
+    @Transactional(readOnly = true)
     public Optional<FahrzeugAntwortDTO> einsAktiv(Long id) {
         return repo.findByIdAndStatus(id, FahrzeugStatus.AKTIV)
                 .map(this::toDTO);
@@ -226,14 +230,7 @@ public class FahrzeugService {
     private FahrzeugAntwortDTO toDTO(Fahrzeug f) {
 
         // HIER: Basis-URL, unter der die Bilder erreichbar sind
-        List<FahrzeugBildAntwortDTO> bilder = f.getBilder().stream()
-                .map(b -> new FahrzeugBildAntwortDTO(
-                        b.getId(),
-                        "/api/fahrzeuge/bilder/" + b.getId(),
-                        b.isVorschau(),
-                        b.getSortierung()
-                ))
-                .toList();
+        List<FahrzeugBildAntwortDTO> bilder = bildRepo.findDtosByFahrzeugId(f.getId());
 
         return new FahrzeugAntwortDTO(
                 f.getId(),

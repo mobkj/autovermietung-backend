@@ -53,7 +53,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST, "/api/contact").permitAll()
-
+                        .requestMatchers("/error").permitAll()
                         // Öffentliche Endpunkte
                         .requestMatchers("/auth/login", "/auth/register").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
