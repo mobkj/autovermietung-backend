@@ -61,6 +61,7 @@ public class SecurityConfig {
 
                         // PUBLIC Fahrzeuge (ohne Login)
                         .requestMatchers("/api/fahrzeuge", "/api/fahrzeuge/", "/api/fahrzeuge/**").permitAll()
+                        .requestMatchers("/api/fahrzeuge/bilder/**").permitAll()
 
 
 
@@ -68,7 +69,6 @@ public class SecurityConfig {
                         // Jeder eingeloggte User darf Buchung anlegen
                         .requestMatchers(HttpMethod.POST, "/api/buchungen").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/buchungen/mw").authenticated()
 
                         // Admin Bereich
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
