@@ -60,7 +60,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/stripe/webhook").permitAll()
 
                         // PUBLIC Fahrzeuge (ohne Login)
-                        .requestMatchers(HttpMethod.GET, "/api/fahrzeuge", "/api/fahrzeuge/**").permitAll()
+                        .requestMatchers("/api/fahrzeuge", "/api/fahrzeuge/", "/api/fahrzeuge/**").permitAll()
+
 
 
                         // Buchungen
@@ -97,6 +98,7 @@ public class SecurityConfig {
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setExposedHeaders(List.of("*"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin"));
         config.setExposedHeaders(List.of("Authorization")); // optional, falls du Tokens in Response-Headers nutzt
 
