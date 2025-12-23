@@ -40,8 +40,8 @@ public class RechnungPdfService {
             // ============ HEADER (Unternehmen) ============
             Paragraph firma = new Paragraph(
                     "Mazari Autovermietung\n" +
-                            "Musterstraße 1\n" +
-                            "65185 Wiesbaden\n\n",
+                            "Am Königsfloß 6\n" +
+                            "55252 Mainz-Kastel\n Deutschland \n\n",
                     FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12)
             );
             doc.add(firma);
@@ -120,7 +120,7 @@ public class RechnungPdfService {
             Paragraph leistungMeta = new Paragraph(
                     "Mietfahrzeug: " + fahrzeugText + "\n" +
                             "Mietzeitraum: " + DATE_TIME_FMT.format(buchung.getStartDatum()) +
-                            " bis " + DATE_TIME_FMT.format(buchung.getEndDatum())
+                            " bis " + DATE_TIME_FMT.format(buchung.getEndDatum()) + "\n\n"
             );
             doc.add(leistungMeta);
 
