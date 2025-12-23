@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/fahrzeuge")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ROLE_ADMIN')")
+@PreAuthorize("hasAuthority('ADMIN')")
 public class FahrzeugAdminController {
 
     private final FahrzeugService service;

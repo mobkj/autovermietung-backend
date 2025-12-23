@@ -22,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -60,18 +61,17 @@ public class SecurityConfig {
                         .requestMatchers("/api/stripe/webhook").permitAll()
 
                         // PUBLIC Fahrzeuge (ohne Login)
-                        .requestMatchers("/api/fahrzeuge", "/api/fahrzeuge/", "/api/fahrzeuge/**").permitAll()
-                        .requestMatchers("/api/fahrzeuge/bilder/**").permitAll()
-
+                        .requestMatchers(antMatcher("/api/fahrzeuge")).permitAll()
+                        .requestMatchers(antMatcher("/api/fahrzeuge/**")).permitAll()
 
 
                         // Buchungen
                         // Jeder eingeloggte User darf Buchung anlegen
                         .requestMatchers(HttpMethod.POST, "/api/buchungen").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").authenticated()
 
                         // Admin Bereich
-                        .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
 
                         .requestMatchers("/api/test-email/**").permitAll()
 
