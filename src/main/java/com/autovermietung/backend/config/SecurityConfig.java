@@ -24,9 +24,9 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
-
-import java.util.List;
-import java.util.stream.Collectors;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.core.Ordered;
+import org.springframework.web.filter.CorsFilter;
 
 @EnableMethodSecurity
 @Configuration
@@ -62,14 +62,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/stripe/webhook").permitAll()
 
                         // PUBLIC Fahrzeuge (ohne Login)
-                        .requestMatchers(antMatcher("/api/fahrzeuge")).permitAll()
                         .requestMatchers(antMatcher("/api/fahrzeuge/**")).permitAll()
 
 
                         // Buchungen
                         // Jeder eingeloggte User darf Buchung anlegen
                         .requestMatchers(HttpMethod.POST, "/api/buchungen").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").permitAll()
 
                         // Admin Bereich
                         .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
@@ -84,32 +83,24 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
-    public WebSecurityCustomizer webSecurityCustomizer() {
-        return (web) -> web.ignoring().requestMatchers(
-                antMatcher("/api/fahrzeuge/**"),
-                antMatcher("/api/fahrzeuge/bilder/**")
-        );
-    }
+
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Frontend-Origins, die auf dein Backend zugreifen dürfen
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
                 "https://autovermietung-frontend.vercel.app",
-                "https://*.vercel.app" // optional: falls Preview-Deployments erlaubt sein sollen
+                "https://*.vercel.app"
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setExposedHeaders(List.of("*"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin"));
-        config.setExposedHeaders(List.of("Authorization")); // optional, falls du Tokens in Response-Headers nutzt
 
-        // Bei JWT im Authorization-Header brauchst du das NICHT zwingend.
-        // Lass es nur true, wenn du wirklich Cookies/Session über CORS nutzt.
+        // ✅ wichtig: erstmal alles erlauben
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("*"));
+
         config.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -117,7 +108,26 @@ public class SecurityConfig {
         return source;
     }
 
+    @Bean
+    public FilterRegistrationBean<CorsFilter> corsFilter() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:5173",
+                "https://autovermietung-frontend.vercel.app",
+                "https://*.vercel.app"
+        ));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("*"));
+        config.setAllowCredentials(false);
 
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+
+        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(new CorsFilter(source));
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return bean;
+    }
 
 
     @Bean
