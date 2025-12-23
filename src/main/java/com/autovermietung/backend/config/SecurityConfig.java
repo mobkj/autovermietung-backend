@@ -71,7 +71,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/buchungen/fahrzeug/**").permitAll()
 
                         // Admin Bereich
-                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
                         .requestMatchers("/api/test-email/**").permitAll()
 

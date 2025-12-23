@@ -73,7 +73,7 @@ public class BuchungController {
     }
 
     @GetMapping("/api/admin/buchungen/todo")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public List<AdminTodoItemDTO> adminTodos(
             @RequestParam(name = "range", defaultValue = "week") String range
     ) {
